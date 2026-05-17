@@ -416,6 +416,7 @@ export interface GameState {
   lavaTideTurnsRemaining: number;
   lavaTideTiles: { x: number; y: number }[];
   extraTurnCost: number;
+  deathCause: string;
 }
 
 export interface HighScore {

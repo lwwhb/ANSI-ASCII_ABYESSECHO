@@ -9,6 +9,7 @@ const GameOverScreen: React.FC = () => {
   const highScores = useGameStore(s => s.highScores);
   const achievements = useGameStore(s => s.achievements);
   const isDailyChallenge = useGameStore(s => s.isDailyChallenge);
+  const deathCause = useGameStore(s => s.deathCause);
   const restartGame = useGameStore(s => s.restartGame);
 
   if (!player) return null;
@@ -50,6 +51,17 @@ const GameOverScreen: React.FC = () => {
       }}>
         你倒在了深渊的第 {currentFloor} 层
       </div>
+
+      {deathCause && (
+        <div style={{
+          color: '#cc6644',
+          fontSize: '14px',
+          marginBottom: '20px',
+          fontStyle: 'italic',
+        }}>
+          ☠️ {deathCause}
+        </div>
+      )}
 
       {/* Stats Summary */}
       <div style={{

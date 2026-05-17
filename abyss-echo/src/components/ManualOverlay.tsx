@@ -383,10 +383,10 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <table style={tableStyle}>
               <thead><tr><th style={thStyle}>符号</th><th style={thStyle}>名称</th><th style={thStyle}>特点</th></tr></thead>
               <tbody>
-                <tr><td style={tdStyle}>s</td><td style={tdStyle}>史莱姆</td><td style={tdStyle}>弱小但数量多，弱火</td></tr>
-                <tr><td style={tdStyle}>r</td><td style={tdStyle}>巨鼠</td><td style={tdStyle}>速度快（2倍行动），弱雷</td></tr>
-                <tr><td style={tdStyle}>b</td><td style={tdStyle}>蝙蝠</td><td style={tdStyle}>胆小，低HP时逃跑，弱雷</td></tr>
-                <tr><td style={tdStyle}>g</td><td style={tdStyle}>哥布林</td><td style={tdStyle}>巡逻型，弱火</td></tr>
+                <tr><td style={tdStyle}>§</td><td style={tdStyle}>史莱姆</td><td style={tdStyle}>弱小但数量多，弱火</td></tr>
+                <tr><td style={tdStyle}>Я</td><td style={tdStyle}>巨鼠</td><td style={tdStyle}>速度快（2倍行动）</td></tr>
+                <tr><td style={tdStyle}>ψ</td><td style={tdStyle}>蝙蝠</td><td style={tdStyle}>胆小，低HP时逃跑，弱雷</td></tr>
+                <tr><td style={tdStyle}>ǥ</td><td style={tdStyle}>哥布林</td><td style={tdStyle}>巡逻型，弱火</td></tr>
               </tbody>
             </table>
             <p style={pStyle}>🧑‍👑 <strong style={{ color: '#ff8800' }}>Boss: 哥布林王</strong> (第5层) — 会召唤小弟！</p>
@@ -396,9 +396,9 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <thead><tr><th style={thStyle}>符号</th><th style={thStyle}>名称</th><th style={thStyle}>特点</th></tr></thead>
               <tbody>
                 <tr><td style={tdStyle}>S</td><td style={tdStyle}>骷髅</td><td style={tdStyle}>高防御，弱火</td></tr>
-                <tr><td style={tdStyle}>s</td><td style={tdStyle}>巨蛛</td><td style={tdStyle}>定点守卫，会吐丝</td></tr>
-                <tr><td style={tdStyle}>O</td><td style={tdStyle}>兽人</td><td style={tdStyle}>高攻击力</td></tr>
-                <tr><td style={tdStyle}>W</td><td style={tdStyle}>暗影</td><td style={tdStyle}>速度快，弱火</td></tr>
+                <tr><td style={tdStyle}>╳</td><td style={tdStyle}>巨蛛</td><td style={tdStyle}>定点守卫，会吐丝</td></tr>
+                <tr><td style={tdStyle}>Ω</td><td style={tdStyle}>兽人</td><td style={tdStyle}>高攻击力</td></tr>
+                <tr><td style={tdStyle}>ω</td><td style={tdStyle}>暗影</td><td style={tdStyle}>速度快，弱火</td></tr>
               </tbody>
             </table>
             <p style={pStyle}>👸 <strong style={{ color: '#ff8800' }}>Boss: 蜘蛛女王</strong> (第10层) — 吐丝冰冻你！</p>
@@ -407,8 +407,8 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <table style={tableStyle}>
               <thead><tr><th style={thStyle}>符号</th><th style={thStyle}>名称</th><th style={thStyle}>特点</th></tr></thead>
               <tbody>
-                <tr><td style={tdStyle}>K</td><td style={tdStyle}>暗黑骑士</td><td style={tdStyle}>高攻高防，弱雷</td></tr>
-                <tr><td style={tdStyle}>W</td><td style={tdStyle}>怨灵</td><td style={tdStyle}>会吸取生命</td></tr>
+                <tr><td style={tdStyle}>Ķ</td><td style={tdStyle}>暗黑骑士</td><td style={tdStyle}>高攻高防，弱雷</td></tr>
+                <tr><td style={tdStyle}>R</td><td style={tdStyle}>怨灵</td><td style={tdStyle}>会吸取生命</td></tr>
                 <tr><td style={tdStyle}>T</td><td style={tdStyle}>巨魔</td><td style={tdStyle}>会自我恢复</td></tr>
                 <tr><td style={tdStyle}>M</td><td style={tdStyle}>宝箱怪</td><td style={tdStyle}>伪装成物品，突然袭击</td></tr>
               </tbody>
@@ -419,9 +419,9 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <table style={tableStyle}>
               <thead><tr><th style={thStyle}>符号</th><th style={thStyle}>名称</th><th style={thStyle}>特点</th></tr></thead>
               <tbody>
-                <tr><td style={tdStyle}>D</td><td style={tdStyle}>恶魔</td><td style={tdStyle}>会火球术，弱冰</td></tr>
-                <tr><td style={tdStyle}>G</td><td style={tdStyle}>蛇发女妖</td><td style={tdStyle}>会石化凝视</td></tr>
-                <tr><td style={tdStyle}>V</td><td style={tdStyle}>吸血鬼</td><td style={tdStyle}>速度快，吸取生命</td></tr>
+                <tr><td style={tdStyle}>Δ</td><td style={tdStyle}>恶魔</td><td style={tdStyle}>会火球术，弱冰</td></tr>
+                <tr><td style={tdStyle}>Φ</td><td style={tdStyle}>蛇发女妖</td><td style={tdStyle}>会石化凝视</td></tr>
+                <tr><td style={tdStyle}>√</td><td style={tdStyle}>吸血鬼</td><td style={tdStyle}>速度快，吸取生命</td></tr>
                 <tr><td style={tdStyle}>L</td><td style={tdStyle}>巫妖</td><td style={tdStyle}>会召唤，弱火</td></tr>
               </tbody>
             </table>
@@ -431,8 +431,8 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <table style={tableStyle}>
               <thead><tr><th style={thStyle}>符号</th><th style={thStyle}>名称</th><th style={thStyle}>特点</th></tr></thead>
               <tbody>
-                <tr><td style={tdStyle}>D</td><td style={tdStyle}>巨龙</td><td style={tdStyle}>龙息攻击，弱冰</td></tr>
-                <tr><td style={tdStyle}>V</td><td style={tdStyle}>虚空行者</td><td style={tdStyle}>会瞬间移动</td></tr>
+                <tr><td style={tdStyle}>Ð</td><td style={tdStyle}>巨龙</td><td style={tdStyle}>龙息攻击，弱冰</td></tr>
+                <tr><td style={tdStyle}>Ø</td><td style={tdStyle}>虚空行者</td><td style={tdStyle}>会瞬间移动</td></tr>
                 <tr><td style={tdStyle}>A</td><td style={tdStyle}>远古存在</td><td style={tdStyle}>不可名状的力量</td></tr>
               </tbody>
             </table>

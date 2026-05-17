@@ -5,6 +5,7 @@ import {
   DungeonData, Room,
   createTile,
   placeEnemies, placeItems, placeBoss,
+  pickStartAndStairs,
 } from './DungeonGenerator';
 
 function carveBridge(map: Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome, width: number): void {
@@ -136,10 +137,9 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
     }
     islands.push({ x: cx, y: cy, w: 8, h: 6, centerX: cx + 4, centerY: cy + 3 });
   }
-  const firstIsland = islands[0];
-  const playerStart = { x: firstIsland.centerX, y: firstIsland.centerY };
-  const lastIsland = islands[islands.length - 1];
-  const stairsDown = { x: lastIsland.centerX, y: lastIsland.centerY };
+  const { startRoom, stairsRoom } = pickStartAndStairs(islands, rng, width, height);
+  const playerStart = { x: startRoom.centerX, y: startRoom.centerY };
+  const stairsDown = { x: stairsRoom.centerX, y: stairsRoom.centerY };
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
   const enemies = placeEnemies(islands, floor, rng, config.enemyIds);

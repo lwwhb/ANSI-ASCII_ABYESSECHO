@@ -338,6 +338,44 @@ export function generateDungeon(floor: number, seed: number): DungeonData {
   }
 }
 
+// Pick two rooms that are far enough apart for player start and stairs-down
+export function pickStartAndStairs(rooms: Room[], rng: SeededRandom, mapWidth: number, mapHeight: number): { startRoom: Room; stairsRoom: Room } {
+  if (rooms.length <= 1) {
+    return { startRoom: rooms[0], stairsRoom: rooms[0] };
+  }
+
+  const diagonal = Math.sqrt(mapWidth * mapWidth + mapHeight * mapHeight);
+  const minDist = diagonal * 0.3;
+
+  let bestA = 0;
+  let bestB = rooms.length - 1;
+  let bestDist = 0;
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const a = rng.nextInt(0, rooms.length - 1);
+    const b = rng.nextInt(0, rooms.length - 1);
+    if (a === b) continue;
+    const dist = Math.abs(rooms[a].centerX - rooms[b].centerX) + Math.abs(rooms[a].centerY - rooms[b].centerY);
+    if (dist >= minDist) {
+      if (rng.chance(0.5)) {
+        return { startRoom: rooms[a], stairsRoom: rooms[b] };
+      }
+      return { startRoom: rooms[b], stairsRoom: rooms[a] };
+    }
+    if (dist > bestDist) {
+      bestDist = dist;
+      bestA = a;
+      bestB = b;
+    }
+  }
+
+  // Fallback: use the farthest pair found
+  if (rng.chance(0.5)) {
+    return { startRoom: rooms[bestA], stairsRoom: rooms[bestB] };
+  }
+  return { startRoom: rooms[bestB], stairsRoom: rooms[bestA] };
+}
+
 // Helper function to place boss (used by all generators)
 export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId: string; pos: Position; isBoss: boolean } | null {
   if (floor % 5 !== 0) return null;

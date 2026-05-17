@@ -10,6 +10,7 @@ import {
   carveRoom, carveCorridor, connectRooms,
   placeDoors, addEnvironment,
   placeEnemies, placeItems, placeBoss,
+  pickStartAndStairs,
 } from './DungeonGenerator';
 
 function addLoopCorridors(map: Tile[][], rooms: Room[], biome: Biome, rng: SeededRandom): void {
@@ -59,11 +60,10 @@ export function generateStoneDungeon(floor: number, seed: number): DungeonData {
     carveRoom(map, rooms[0], biome);
   }
 
-  const firstRoom = rooms[0];
-  const playerStart = { x: firstRoom.centerX, y: firstRoom.centerY };
+  const { startRoom, stairsRoom } = pickStartAndStairs(rooms, rng, width, height);
+  const playerStart = { x: startRoom.centerX, y: startRoom.centerY };
 
-  const lastRoom = rooms[rooms.length - 1];
-  const stairsDown = { x: lastRoom.centerX, y: lastRoom.centerY };
+  const stairsDown = { x: stairsRoom.centerX, y: stairsRoom.centerY };
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
   const enemies = placeEnemies(rooms, floor, rng, config.enemyIds);

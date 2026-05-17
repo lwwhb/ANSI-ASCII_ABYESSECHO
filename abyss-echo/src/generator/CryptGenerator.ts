@@ -7,6 +7,7 @@ import {
   splitBSP, createRooms, collectRooms,
   carveRoom, addEnvironment,
   placeEnemies, placeItems, placeBoss,
+  pickStartAndStairs,
 } from './DungeonGenerator';
 
 function carveWideCorridorReal(map: import('../types').Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome): void {
@@ -138,11 +139,10 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
     }
   }
 
-  // Player start and stairs
-  const firstRoom = rooms[0];
-  const playerStart = { x: firstRoom.centerX, y: firstRoom.centerY };
-  const lastRoom = rooms[rooms.length - 1];
-  const stairsDown = { x: lastRoom.centerX, y: lastRoom.centerY };
+  // Player start and stairs: randomly pick far-apart rooms
+  const { startRoom, stairsRoom } = pickStartAndStairs(rooms, rng, width, height);
+  const playerStart = { x: startRoom.centerX, y: startRoom.centerY };
+  const stairsDown = { x: stairsRoom.centerX, y: stairsRoom.centerY };
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
   const enemies = placeEnemies(rooms, floor, rng, config.enemyIds);

@@ -1,21 +1,33 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useLayoutEffect, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
+
+const SCROLL_THRESHOLD = 40; // px from bottom to consider "at bottom"
 
 const MessageLog: React.FC = () => {
   const messages = useGameStore(s => s.messages);
   const logRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScroll = useRef(true);
 
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
+  useLayoutEffect(() => {
+    if (shouldAutoScroll.current && logRef.current) {
+      const el = logRef.current;
+      el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length]);
+  }, [messages]);
+
+  const handleScroll = useCallback(() => {
+    const el = logRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD;
+    shouldAutoScroll.current = atBottom;
+  }, []);
 
   const recentMessages = messages.slice(-50);
 
   return (
     <div
       ref={logRef}
+      onScroll={handleScroll}
       style={{
         height: '120px',
         backgroundColor: '#08081a',

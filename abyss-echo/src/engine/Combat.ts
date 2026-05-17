@@ -21,9 +21,14 @@ export function calculateMeleeDamage(
   element: Element,
   rng: SeededRandom
 ): CombatResult {
-  const baseDamage = attackerStats.str + weaponDamage - defender.defense;
+  const baseDamage = Math.floor(attackerStats.str * 0.5) + weaponDamage;
+  const variance = rng.nextInt(-2, 2);
+  const rawDamage = baseDamage + variance;
   const elementalMult = getElementalModifier(element, defender.weakness, defender.resistance);
-  let damage = Math.max(1, Math.floor(baseDamage * elementalMult));
+  const preDefDamage = Math.max(1, Math.floor(rawDamage * elementalMult));
+
+  // Multiplicative defense: higher defense always reduces damage meaningfully
+  let damage = Math.max(1, Math.floor(preDefDamage * 20 / (20 + defender.defense)));
 
   // Critical hit: 5% + DEX/200
   const critChance = 0.05 + attackerStats.dex / 200;

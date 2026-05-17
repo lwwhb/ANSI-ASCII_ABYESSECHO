@@ -270,6 +270,7 @@ const initialState: GameState = {
   lavaTideTurnsRemaining: 0,
   lavaTideTiles: [],
   extraTurnCost: 0,
+  deathCause: '',
 };
 
 export const useGameStore = create<GameStore>((set, get) => {
@@ -318,7 +319,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     set({ map: newMap, visibleTiles: visible, rememberedMap: remembered });
   }
 
-  function handlePlayerDeath(player: Player, enemies: Enemy[], messages: Message[]) {
+  function handlePlayerDeath(player: Player, enemies: Enemy[], messages: Message[], deathCause: string) {
     const state = get();
     messages.push(msg('你倒在了深渊之中...', MessageCategory.System, '#ff0000'));
     AudioManager.playSFX('death');
@@ -341,7 +342,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     }].sort((a, b) => b.floor - a.floor).slice(0, 10);
     saveHighScores(scores);
 
-    set({ player, enemies, messages: [...state.messages.slice(-100), ...messages], phase: GamePhase.GameOver, highScores: scores, achievements: allAchievements });
+    set({ player, enemies, messages: [...state.messages.slice(-100), ...messages], phase: GamePhase.GameOver, highScores: scores, achievements: allAchievements, deathCause });
 
     // Delete save on death (permadeath)
     deleteSave('角色已死亡，存档已删除');
@@ -378,11 +379,11 @@ export const useGameStore = create<GameStore>((set, get) => {
         const er = getEnemyAction(enemies2[i], player2.pos, s2.map, visibleTiles2, enemies2, rng2);
         if (er === 'attack') {
           const def2 = getPlayerDefense(player2) + getTalentModifiedDamageReduction(player2) + getTalentModifiedTenaciousDefense(player2) + getTalentShieldWallDefense(player2);
-          const dmg2 = Math.max(1, enemies2[i].attack - def2);
+          const dmg2 = Math.max(1, Math.floor(enemies2[i].attack * 20 / (20 + def2)));
           player2.hp -= dmg2;
           msgs2.push(msg(`${enemies2[i].name}攻击了你，造成 ${dmg2} 点伤害！`, MessageCategory.Combat, '#ff4444'));
           if (player2.hp <= 0) {
-            handlePlayerDeath(player2, enemies2, msgs2);
+            handlePlayerDeath(player2, enemies2, msgs2, `被${enemies2[i].name}击杀`);
             return;
           }
         } else if (er !== 'wait' && er !== 'special') {
@@ -422,7 +423,12 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     // Check player death from status effects
     if (player.hp <= 0) {
-      handlePlayerDeath(player, enemies, messages);
+      const dmgEffects = player.statusEffects.filter(e => e.damage && e.damage > 0);
+      const effectZh: Record<string, string> = { poison: '中毒', burn: '燃烧', bleed: '流血' };
+      const cause = dmgEffects.length > 0
+        ? `因${dmgEffects.map(e => effectZh[e.type] || e.type).join('和')}致死`
+        : '因异常状态致死';
+      handlePlayerDeath(player, enemies, messages, cause);
       return;
     }
 
@@ -457,7 +463,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     // Check player death from starvation
     if (player.hp <= 0) {
-      handlePlayerDeath(player, enemies, messages);
+      handlePlayerDeath(player, enemies, messages, '饥饿致死');
       return;
     }
 
@@ -560,15 +566,16 @@ export const useGameStore = create<GameStore>((set, get) => {
             }
           } else if (actionResult === 'attack') {
             const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player);
-            const rawDamage = enemy.attack - defense;
-            const damage = Math.max(1, rawDamage);
+            const variance = rng.nextInt(-2, 2);
+            const rawDamage = enemy.attack + variance;
+            const damage = Math.max(1, Math.floor(rawDamage * 20 / (20 + defense)));
             player.hp -= damage;
             messages.push(msg(`${enemy.name}攻击了你，造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
             AudioManager.playSFX('hit');
             flashScreen('#ff000033');
 
             if (player.hp <= 0) {
-              handlePlayerDeath(player, enemies, messages);
+              handlePlayerDeath(player, enemies, messages, `被${enemy.name}击杀`);
               return;
             }
           } else {
@@ -2210,6 +2217,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         lavaTideTurnsRemaining: loadedState.lavaTideTurnsRemaining ?? 0,
         lavaTideTiles: loadedState.lavaTideTiles ?? [],
         extraTurnCost: loadedState.extraTurnCost ?? 0,
+        deathCause: '',
       });
 
       // Suspend save: delete after loading to prevent save-scumming

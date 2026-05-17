@@ -5,6 +5,7 @@ import {
   DungeonData, Room,
   createTile, fillMap,
   placeEnemies, placeItems, placeBoss,
+  pickStartAndStairs,
 } from './DungeonGenerator';
 
 interface Fragment {
@@ -115,27 +116,30 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
     }
   }
 
-  // 4. Player start, stairs, enemies, items
-  const firstFrag = fragments[0];
-  const playerStart = { x: firstFrag.centerX, y: firstFrag.centerY };
+  // 4. Player start and stairs: randomly pick far-apart fragments
+  const { startRoom: startFrag, stairsRoom: stairsFrag } = pickStartAndStairs(fragments, rng, width, height);
+  const playerStart = { x: startFrag.centerX, y: startFrag.centerY };
   // Ensure player start is on a floor tile
   if (map[playerStart.y][playerStart.x].type !== TileType.Floor) {
-    const floorTile = firstFrag.floorTiles[0];
+    const startFragData = fragments.find(f => f.centerX === startFrag.centerX && f.centerY === startFrag.centerY);
+    const floorTile = startFragData?.floorTiles[0];
     if (floorTile) { playerStart.x = floorTile.x; playerStart.y = floorTile.y; }
   }
 
-  const lastFrag = fragments[fragments.length - 1];
-  const stairsDown = { x: lastFrag.centerX, y: lastFrag.centerY };
+  const stairsDown = { x: stairsFrag.centerX, y: stairsFrag.centerY };
   if (map[stairsDown.y][stairsDown.x].type === TileType.Floor) {
     map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
   } else {
-    // Find any floor tile in last fragment
-    for (const t of lastFrag.floorTiles) {
-      if (map[t.y][t.x].type === TileType.Floor) {
-        map[t.y][t.x] = createTile(TileType.StairsDown, biome);
-        stairsDown.x = t.x;
-        stairsDown.y = t.y;
-        break;
+    // Find any floor tile in the stairs fragment
+    const stairsFragData = fragments.find(f => f.centerX === stairsFrag.centerX && f.centerY === stairsFrag.centerY);
+    if (stairsFragData) {
+      for (const t of stairsFragData.floorTiles) {
+        if (map[t.y][t.x].type === TileType.Floor) {
+          map[t.y][t.x] = createTile(TileType.StairsDown, biome);
+          stairsDown.x = t.x;
+          stairsDown.y = t.y;
+          break;
+        }
       }
     }
   }

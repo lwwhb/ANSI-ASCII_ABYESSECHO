@@ -6,6 +6,7 @@ import {
   createTile, createWallTile, fillMap,
   carveCorridor,
   placeEnemies, placeItems, placeBoss,
+  pickStartAndStairs,
 } from './DungeonGenerator';
 
 function floodFill(map: Tile[][], startX: number, startY: number, width: number, height: number, globalVisited: Set<string>): Set<string> {
@@ -132,14 +133,11 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
   // 8. Use clusters as the primary rooms for entity placement
   const rooms = [...clusters];
 
-  // Player start: first cluster center
-  const playerStart = clusters.length > 0
-    ? { x: clusters[0].centerX, y: clusters[0].centerY }
-    : { x: Math.floor(width / 2), y: Math.floor(height / 2) };
+  // Player start and stairs: randomly pick far-apart clusters
+  const { startRoom, stairsRoom } = pickStartAndStairs(clusters, rng, width, height);
+  const playerStart = { x: startRoom.centerX, y: startRoom.centerY };
 
-  // Stairs: last cluster center
-  const lastCluster = clusters.length > 0 ? clusters[clusters.length - 1] : clusters[0];
-  const stairsDown = { x: lastCluster.centerX, y: lastCluster.centerY };
+  const stairsDown = { x: stairsRoom.centerX, y: stairsRoom.centerY };
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
   const enemies = placeEnemies(rooms, floor, rng, config.enemyIds);
