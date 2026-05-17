@@ -1,4 +1,4 @@
-export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear';
+export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear' | 'heartbeat' | 'stomachGrowl';
 
 export interface SfxStage {
   freq: number;        // Start frequency in Hz
@@ -122,6 +122,24 @@ export const SFX_DEFS: SfxDef[] = [
     stages: [
       { freq: 80, freqEnd: 40, wave: 'sawtooth', duration: 0.4, gain: 0.35 },
       { freq: 200, freqEnd: 600, wave: 'square', duration: 0.3, gain: 0.3, gainEnd: 0 },
+    ],
+  },
+
+  // 13. heartbeat: Low double-thump mimicking heartbeat (55Hz sine + 45Hz sine, soft)
+  {
+    id: 'heartbeat',
+    stages: [
+      { freq: 55, wave: 'sine', duration: 0.12, gain: 0.35, gainEnd: 0 },
+      { freq: 45, wave: 'sine', duration: 0.18, gain: 0.25, gainEnd: 0 },
+    ],
+  },
+
+  // 14. stomachGrowl: Low descending gurgle (120→40Hz triangle, then 80→30Hz triangle)
+  {
+    id: 'stomachGrowl',
+    stages: [
+      { freq: 120, freqEnd: 40, wave: 'triangle', duration: 0.15, gain: 0.2, gainEnd: 0 },
+      { freq: 80, freqEnd: 30, wave: 'triangle', duration: 0.2, gain: 0.15, gainEnd: 0 },
     ],
   },
 ];

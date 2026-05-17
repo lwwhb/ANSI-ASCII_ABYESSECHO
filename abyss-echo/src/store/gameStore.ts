@@ -81,7 +81,9 @@ function saveGame(state: GameStore) {
     const { phase, player, currentFloor, map, width, height, enemies, items,
       messages, turn, seed, highScores, achievements, legacyItem,
       isDailyChallenge, shopItems, currentEvent,
-      skillUseCount, shopBuyCount, musicEnabled, sfxEnabled } = state;
+      skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
+      voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
+      extraTurnCost, deathCause, warningPulse } = state;
     const saveData = {
       version: SAVE_VERSION,
       state: {
@@ -89,6 +91,8 @@ function saveGame(state: GameStore) {
         messages, turn, seed, highScores, achievements, legacyItem,
         isDailyChallenge, shopItems, currentEvent,
         skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
+        voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
+        extraTurnCost, deathCause, warningPulse,
         screenFlash: null,
       },
     };
@@ -271,6 +275,7 @@ const initialState: GameState = {
   lavaTideTiles: [],
   extraTurnCost: 0,
   deathCause: '',
+  warningPulse: 'none' as const,
 };
 
 export const useGameStore = create<GameStore>((set, get) => {
@@ -342,7 +347,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     }].sort((a, b) => b.floor - a.floor).slice(0, 10);
     saveHighScores(scores);
 
-    set({ player, enemies, messages: [...state.messages.slice(-100), ...messages], phase: GamePhase.GameOver, highScores: scores, achievements: allAchievements, deathCause });
+    set({ player, enemies, messages: [...state.messages.slice(-100), ...messages], phase: GamePhase.GameOver, highScores: scores, achievements: allAchievements, deathCause, warningPulse: 'none' as const });
 
     // Delete save on death (permadeath)
     deleteSave('角色已死亡，存档已删除');
@@ -596,6 +601,25 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Remove dead enemies
     enemies = enemies.filter(e => e.hp > 0);
 
+    // Warning pulse: low HP / hunger
+    const isLowHp = player.hp / player.maxHp < 0.3;
+    const isStarving = player.hunger <= 0;
+    const newTurn = state.turn + 1;
+    let warningPulse: GameState['warningPulse'] = 'none';
+    if (isLowHp && isStarving) {
+      warningPulse = 'both';
+    } else if (isLowHp) {
+      warningPulse = 'lowHp';
+    } else if (isStarving) {
+      warningPulse = 'hunger';
+    }
+    if (isLowHp && newTurn % 3 === 0) {
+      AudioManager.playSFX('heartbeat');
+    }
+    if (isStarving && newTurn % 5 === 0) {
+      AudioManager.playSFX('stomachGrowl');
+    }
+
     // Check level up
     if (checkLevelUp(player)) {
       player = applyLevelUp(player);
@@ -630,13 +654,14 @@ export const useGameStore = create<GameStore>((set, get) => {
       addMessages(messages);
     }
     set({
-      turn: state.turn + 1,
+      turn: newTurn,
       map: currentMap,
       lavaTideActive,
       lavaTideTurnsRemaining,
       lavaTideTiles,
       voidCorruption,
       currentFragmentTurns,
+      warningPulse,
     });
     updateFOV();
   }
@@ -920,6 +945,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         lavaTideActive: false,
         lavaTideTurnsRemaining: 0,
         lavaTideTiles: [],
+        warningPulse: 'none' as const,
       });
       enterFloor(1);
       AudioManager.updateContext('playing', 1, false, 'stoneDungeon');
@@ -2218,6 +2244,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         lavaTideTiles: loadedState.lavaTideTiles ?? [],
         extraTurnCost: loadedState.extraTurnCost ?? 0,
         deathCause: '',
+        warningPulse: 'none' as const,
       });
 
       // Suspend save: delete after loading to prevent save-scumming

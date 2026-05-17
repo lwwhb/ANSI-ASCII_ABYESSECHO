@@ -417,6 +417,7 @@ export interface GameState {
   lavaTideTiles: { x: number; y: number }[];
   extraTurnCost: number;
   deathCause: string;
+  warningPulse: 'none' | 'lowHp' | 'hunger' | 'both';
 }
 
 export interface HighScore {

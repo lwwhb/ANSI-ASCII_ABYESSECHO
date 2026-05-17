@@ -83,7 +83,7 @@ All commands run from `abyss-echo/`:
 ### Audio System
 - `AudioManager` singleton in `src/audio/AudioManager.ts` (~650 lines)
 - Step sequencer with lookahead scheduling (200ms ahead, 50ms interval)
-- 9 BGM tracks + 12 SFX defined in `musicData.ts` / `sfxData.ts`
+- 9 BGM tracks + 14 SFX defined in `musicData.ts` / `sfxData.ts`
 - Context-aware: auto-switches BGM based on floor biome, boss state, shop, game over
 - Features: crossfade (0.3s), boss overlay, SFX ducking (BGM volume drops during SFX)
 - Mute toggles synced to `GameState.musicEnabled` / `GameState.sfxEnabled`
@@ -147,6 +147,7 @@ All commands run from `abyss-echo/`:
 - **Dungeon start/stairs randomization:** `pickStartAndStairs()` in `DungeonGenerator.ts` randomly selects start and stairs rooms with Manhattan distance > 30% of map diagonal, replacing the old BSP in-order left-top → right-bottom pattern
 - **MessageLog smart scroll:** Uses `useLayoutEffect` + `shouldAutoScroll` ref; auto-scrolls to bottom on new messages, pauses when user scrolls up, resumes when user scrolls within 40px of bottom
 - **Death cause:** `deathCause: string` in `GameState` — set by `handlePlayerDeath`, displayed on GameOverScreen; values like `被${enemy.name}击杀`, `因中毒致死`, `饥饿致死`; reset on restart/load
+- **Warning pulse system:** `warningPulse: 'none' | 'lowHp' | 'hunger' | 'both'` in `GameState` — triggers when HP < 30% maxHp and/or hunger ≤ 0. Audio: heartbeat SFX every 3 turns (low HP), stomachGrowl SFX every 5 turns (starving). Visual: `box-shadow inset` border pulse overlay in `App.tsx` — red (lowHp), yellow (hunger), orange (both), 1.5s animation cycle. Reset on death/restart/load.
 - The `processTurn` function does not deep-copy the map for BFS — it passes a local `currentMap` variable that may differ from `state.map` after lava tide changes
 - Skill crit system: base `skillCritChance = 0.05 + DEX/300`, modified by DeadlyStrike talent
 - Lucky talent gives both +5% drop chance AND +5% item rarity bonus

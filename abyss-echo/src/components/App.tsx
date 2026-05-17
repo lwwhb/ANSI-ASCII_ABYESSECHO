@@ -148,6 +148,7 @@ const GameScreen: React.FC = () => {
   }, [handleKeyDown]);
 
   const screenFlash = useGameStore(s => s.screenFlash);
+  const warningPulse = useGameStore(s => s.warningPulse);
   const musicEnabled = useGameStore(s => s.musicEnabled);
   const sfxEnabled = useGameStore(s => s.sfxEnabled);
   const toggleMusic = useGameStore(s => s.toggleMusic);
@@ -173,6 +174,23 @@ const GameScreen: React.FC = () => {
         }} />
       )}
       <style>{`@keyframes fadeOut { from { opacity: 0.3; } to { opacity: 0; } }`}</style>
+
+      {/* Warning pulse overlay (low HP / hunger) */}
+      {warningPulse !== 'none' && (
+        <div style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          pointerEvents: 'none',
+          zIndex: 999,
+          animation: 'borderPulse 1.5s ease-in-out infinite',
+          boxShadow: warningPulse === 'lowHp'
+            ? 'inset 0 0 40px 10px rgba(255,0,0,0.4)'
+            : warningPulse === 'hunger'
+              ? 'inset 0 0 40px 10px rgba(255,170,0,0.3)'
+              : 'inset 0 0 40px 10px rgba(255,80,0,0.4)',
+        }} />
+      )}
+      <style>{`@keyframes borderPulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }`}</style>
 
       {/* Audio controls HUD */}
       <div style={{
