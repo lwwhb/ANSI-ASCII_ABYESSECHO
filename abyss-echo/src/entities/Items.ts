@@ -164,20 +164,22 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
       bonusStats: cursed ? { [bonusStat]: 0 } : { [bonusStat]: bonusValue },
       cursed,
     } as AmuletItem;
-  } else if (roll < 0.80) {
+  } else if (roll < 0.75) {
     const idx = rng.nextInt(0, POTION_DEFS.length - 1);
     return createPotion(idx);
-  } else if (roll < 0.92) {
+  } else if (roll < 0.85) {
     const idx = rng.nextInt(0, SCROLL_DEFS.length - 1);
     return createScroll(idx);
   } else {
-    // Food: base 8% chance, scaled by foodMultiplier
-    const foodChance = 0.92 + 0.08 * foodMultiplier;
-    if (roll < foodChance) {
+    // Food: 15% base chance (roll 0.85+), scaled by foodMultiplier
+    // foodMultiplier >= 1.0 → full 15% food chance
+    // foodMultiplier < 1.0 → proportionally reduced
+    const effectiveFoodPct = 0.15 * Math.min(foodMultiplier, 1.0);
+    if (roll < 0.85 + effectiveFoodPct) {
       const idx = rng.nextInt(0, FOOD_DEFS.length - 1);
       return createFood(idx);
     }
-    // If food chance exceeded, default to a potion
+    // Fallback to potion when food multiplier reduces the food range
     const idx = rng.nextInt(0, POTION_DEFS.length - 1);
     return createPotion(idx);
   }

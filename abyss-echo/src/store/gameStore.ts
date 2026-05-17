@@ -888,10 +888,11 @@ export const useGameStore = create<GameStore>((set, get) => {
         saveLegacyItem(null); // Clear legacy after use
       }
 
-      // Starting supplies: 2 bread + 1 meat
+      // Starting supplies: 2 bread + 1 rations + 1 jerky
       player.inventory.push(createFood(0)); // 面包
       player.inventory.push(createFood(0)); // 面包
-      player.inventory.push(createFood(1)); // 肉干
+      player.inventory.push(createFood(1)); // 干粮
+      player.inventory.push(createFood(2)); // 肉干
 
       set({
         phase: GamePhase.Playing,

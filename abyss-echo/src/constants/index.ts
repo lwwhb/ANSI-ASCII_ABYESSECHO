@@ -267,10 +267,11 @@ export const SCROLL_DEFS = [
 ];
 
 export const FOOD_DEFS = [
-  { name: '面包',     char: '%', fg: '#ccaa66', nutrition: 40,  rarity: Rarity.Common },
-  { name: '肉干',     char: '%', fg: '#aa6644', nutrition: 60,  rarity: Rarity.Common },
-  { name: '魔法果实', char: '%', fg: '#44cc44', nutrition: 80,  rarity: Rarity.Rare },
-  { name: '仙馔',     char: '%', fg: '#ffcc44', nutrition: 200, rarity: Rarity.Epic },
+  { name: '面包',     char: '%', fg: '#ccaa66', nutrition: 50,  rarity: Rarity.Common },
+  { name: '干粮',     char: '%', fg: '#b8924a', nutrition: 70,  rarity: Rarity.Common },
+  { name: '肉干',     char: '%', fg: '#aa6644', nutrition: 90,  rarity: Rarity.Common },
+  { name: '魔法果实', char: '%', fg: '#44cc44', nutrition: 120, rarity: Rarity.Rare },
+  { name: '仙馔',     char: '%', fg: '#ffcc44', nutrition: 300, rarity: Rarity.Epic },
 ];
 
 // ============================================================
@@ -453,7 +454,7 @@ export const BIOME_CONFIG: Record<Biome, {
     hasWater: false, hasLava: false, hasGas: true, trapChance: 0.06,
     shopChance: 0.15, eventChance: 0.2,
     mapWidth: 70, mapHeight: 30, itemsPerFloorBase: 3, itemsPerFloorGrowth: 1.0,
-    foodDropMultiplier: 0.9, scrollDropMultiplier: 2.0, potionDropMultiplier: 1.0,
+    foodDropMultiplier: 1.0, scrollDropMultiplier: 2.0, potionDropMultiplier: 1.0,
   },
   [Biome.LavaCore]: {
     name: 'Lava Core', nameZh: '熔岩核心', minFloor: 16,
@@ -469,7 +470,7 @@ export const BIOME_CONFIG: Record<Biome, {
     hasWater: false, hasLava: true, hasGas: true, trapChance: 0.07,
     shopChance: 0.08, eventChance: 0.1,
     mapWidth: 100, mapHeight: 32, itemsPerFloorBase: 2, itemsPerFloorGrowth: 0.6,
-    foodDropMultiplier: 0.7, scrollDropMultiplier: 1.0, potionDropMultiplier: 0.8,
+    foodDropMultiplier: 0.85, scrollDropMultiplier: 1.0, potionDropMultiplier: 0.8,
   },
 };
 
