@@ -2,7 +2,7 @@
 
 ## Overview
 
-This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite.
+This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.1**.
 
 ## Repository Structure
 
@@ -92,7 +92,9 @@ All commands run from `abyss-echo/`:
 - `CharacterCreation.tsx` — title screen + class selection + "继续冒险" button + audio toggles
 - `App.tsx` (game) — main game UI in `components/App.tsx`, handles keyboard input, ESC suspend confirm dialog, HUD with audio controls
 - `MapView.tsx` — Canvas-based map renderer with position index (Map<string, T>) for O(1) entity lookup
-- Modal components: `InventoryModal`, `TalentModal`, `ShopModal`, `EventModal`, `LevelUpModal`
+- `MessageLog.tsx` — scrollable message log with smart auto-scroll (pauses on user scroll, resumes when scrolled to bottom)
+- `GameOverScreen.tsx` — death screen showing floor number and death cause
+- Modal components: `InventoryModal`, `TalentModal`, `ShopModal`, `EventModal`, `LevelUpModal`, `ManualOverlay`
 
 ### Save System (Suspend Save)
 - `saveGame()` serializes only `GameState` fields (excludes computed `visibleTiles`/`rememberedMap`) to `localStorage`
@@ -101,6 +103,7 @@ All commands run from `abyss-echo/`:
 - `deleteSave(reason)` called on: load, death (`handlePlayerDeath`), corruption (parse failure)
 - `suspendAndQuit()` — ESC key → confirm → save → return to title
 - Save data includes `version: "1.3.1"` field for future migration
+- `deathCause: string` in `GameState` — composed at death time, displayed on GameOverScreen; reset on restart/load
 - `GameState` fields are all JSON-serializable (no Maps/Sets/functions); `visibleTiles`/`rememberedMap` are in `GameStore` but not `GameState`, rebuilt on load
 
 ### Game Constants
@@ -120,9 +123,30 @@ All commands run from `abyss-echo/`:
 - **TypeScript config:** `noUnusedLocals: false`, `noUnusedParameters: false` (unused params prefixed with `_`)
 - **File size:** `gameStore.ts` is ~2250 lines — the largest file; most others are under 500 lines
 
+## Combat System
+
+### Multiplicative Defense Formula
+- Both player melee attacks and enemy attacks use: `max(1, floor(rawDamage × 20 / (20 + defense)))`
+- K=20 constant: DEF 5 = 20% reduction, DEF 10 = 33%, DEF 15 = 43%, DEF 20 = 50%
+- Replaces old additive formula (`rawDamage - floor(def × 0.6)`) which made defense irrelevant at high attack values
+- Defined in `src/engine/Combat.ts`, applied in `gameStore.ts` for both player→enemy and enemy→player damage
+
+### Enemy Scaling
+- Per-floor stat multiplier: regular enemies +12%/floor, bosses +15%/floor
+- Base stats tuned per biome with linear threat growth (~+2 threat/turn per biome tier)
+- Enemy accuracy scales +2 per biome tier (Stone avg 8 → Void avg 16)
+
+### Boss Design Philosophy
+- DPS race design: later bosses have lower DEF but much higher ATK, creating urgency
+- Abyss King: ATK 38, DEF 10 — player must kill in ~13 turns or die
+
 ## Known Design Notes
 
 - `src/App.tsx` at root is the Vite template default (not used by the game); the game's main component is `src/components/App.tsx`
+- **Unicode enemy symbols:** All enemies use distinctive Unicode characters (e.g., 巨鼠 `Я`, 蝙蝠 `ψ`, 骷髅 `☠`, 巨龙 `Ð`) instead of ASCII lowercase letters which were nearly invisible at game font size
+- **Dungeon start/stairs randomization:** `pickStartAndStairs()` in `DungeonGenerator.ts` randomly selects start and stairs rooms with Manhattan distance > 30% of map diagonal, replacing the old BSP in-order left-top → right-bottom pattern
+- **MessageLog smart scroll:** Uses `useLayoutEffect` + `shouldAutoScroll` ref; auto-scrolls to bottom on new messages, pauses when user scrolls up, resumes when user scrolls within 40px of bottom
+- **Death cause:** `deathCause: string` in `GameState` — set by `handlePlayerDeath`, displayed on GameOverScreen; values like `被${enemy.name}击杀`, `因中毒致死`, `饥饿致死`; reset on restart/load
 - The `processTurn` function does not deep-copy the map for BFS — it passes a local `currentMap` variable that may differ from `state.map` after lava tide changes
 - Skill crit system: base `skillCritChance = 0.05 + DEX/300`, modified by DeadlyStrike talent
 - Lucky talent gives both +5% drop chance AND +5% item rarity bonus
