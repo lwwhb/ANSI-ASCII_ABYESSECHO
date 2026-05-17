@@ -1,0 +1,355 @@
+import { Tile, TileType, Position, Biome } from '../types';
+import { SeededRandom } from '../utils/random';
+import {
+  MIN_ROOM_SIZE, MAX_ROOM_SIZE, ROOM_PADDING,
+  MIN_BSP_SIZE, BSP_SPLIT_MIN, BSP_SPLIT_MAX, TILE_CHARS,
+  BIOME_TILES, BIOME_CONFIG, getBiomeForFloor,
+  ENEMIES_PER_FLOOR_BASE, ENEMIES_PER_FLOOR_GROWTH,
+  BOSS_DEFS,
+} from '../constants';
+import { generateStoneDungeon } from './StoneDungeonGenerator';
+import { generateCrystalCave } from './CrystalCaveGenerator';
+import { generateCrypt } from './CryptGenerator';
+import { generateLavaCore } from './LavaCoreGenerator';
+import { generateVoidAbyss } from './VoidAbyssGenerator';
+
+// Exported interfaces for use by biome-specific generators
+export interface BSPNode {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  left?: BSPNode;
+  right?: BSPNode;
+  room?: Room;
+}
+
+export interface Room {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  centerX: number;
+  centerY: number;
+}
+
+export interface DungeonData {
+  map: Tile[][];
+  rooms: Room[];
+  playerStart: Position;
+  stairsDown: Position;
+  enemies: { defId: string; pos: Position; isBoss: boolean }[];
+  items: { defIndex: number; pos: Position }[];
+  shopPos?: Position;
+  eventPos?: Position;
+}
+
+// Export shared utility functions for use by biome-specific generators
+export function createTile(type: TileType, biome: Biome): Tile {
+  const base = TILE_CHARS[type];
+  const biomeOverride = BIOME_TILES[biome]?.[type];
+  return {
+    type,
+    char: biomeOverride?.char ?? base.char,
+    fg: biomeOverride?.fg ?? base.fg,
+    bg: biomeOverride?.bg ?? base.bg,
+    walkable: base.walkable,
+    transparent: base.transparent,
+    visible: false,
+    remembered: false,
+  };
+}
+
+export function createWallTile(biome: Biome): Tile {
+  return createTile(TileType.Wall, biome);
+}
+
+export function fillMap(biome: Biome, width: number, height: number): Tile[][] {
+  const map: Tile[][] = [];
+  for (let y = 0; y < height; y++) {
+    map[y] = [];
+    for (let x = 0; x < width; x++) {
+      map[y][x] = createWallTile(biome);
+    }
+  }
+  return map;
+}
+
+export function splitBSP(node: BSPNode, rng: SeededRandom): void {
+  if (node.w < MIN_BSP_SIZE * 2 && node.h < MIN_BSP_SIZE * 2) return;
+  const canSplitH = node.h >= MIN_BSP_SIZE * 2;
+  const canSplitV = node.w >= MIN_BSP_SIZE * 2;
+
+  let splitH: boolean;
+  if (canSplitH && canSplitV) {
+    splitH = rng.next() > (node.w / (node.w + node.h));
+  } else {
+    splitH = canSplitH;
+  }
+
+  if (splitH) {
+    const split = rng.nextInt(
+      Math.floor(node.h * BSP_SPLIT_MIN),
+      Math.floor(node.h * BSP_SPLIT_MAX)
+    );
+    node.left = { x: node.x, y: node.y, w: node.w, h: split };
+    node.right = { x: node.x, y: node.y + split, w: node.w, h: node.h - split };
+  } else {
+    const split = rng.nextInt(
+      Math.floor(node.w * BSP_SPLIT_MIN),
+      Math.floor(node.w * BSP_SPLIT_MAX)
+    );
+    node.left = { x: node.x, y: node.y, w: split, h: node.h };
+    node.right = { x: node.x + split, y: node.y, w: node.w - split, h: node.h };
+  }
+
+  splitBSP(node.left, rng);
+  splitBSP(node.right, rng);
+}
+
+export function createRooms(node: BSPNode, rng: SeededRandom): void {
+  if (node.left && node.right) {
+    createRooms(node.left, rng);
+    createRooms(node.right, rng);
+    return;
+  }
+
+  const maxW = node.w - ROOM_PADDING * 2;
+  const maxH = node.h - ROOM_PADDING * 2;
+  if (maxW < MIN_ROOM_SIZE || maxH < MIN_ROOM_SIZE) return;
+
+  const roomW = rng.nextInt(MIN_ROOM_SIZE, Math.min(maxW, MAX_ROOM_SIZE));
+  const roomH = rng.nextInt(MIN_ROOM_SIZE, Math.min(maxH, MAX_ROOM_SIZE));
+  const roomX = node.x + rng.nextInt(ROOM_PADDING, node.w - roomW - ROOM_PADDING);
+  const roomY = node.y + rng.nextInt(ROOM_PADDING, node.h - roomH - ROOM_PADDING);
+
+  node.room = {
+    x: roomX,
+    y: roomY,
+    w: roomW,
+    h: roomH,
+    centerX: Math.floor(roomX + roomW / 2),
+    centerY: Math.floor(roomY + roomH / 2),
+  };
+}
+
+export function collectRooms(node: BSPNode): Room[] {
+  const rooms: Room[] = [];
+  if (node.room) rooms.push(node.room);
+  if (node.left) rooms.push(...collectRooms(node.left));
+  if (node.right) rooms.push(...collectRooms(node.right));
+  return rooms;
+}
+
+export function carveRoom(map: Tile[][], room: Room, biome: Biome): void {
+  const height = map.length;
+  const width = map[0]?.length || 0;
+  for (let y = room.y; y < room.y + room.h; y++) {
+    for (let x = room.x; x < room.x + room.w; x++) {
+      if (y >= 0 && y < height && x >= 0 && x < width) {
+        map[y][x] = createTile(TileType.Floor, biome);
+      }
+    }
+  }
+}
+
+export function carveCorridor(map: Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome): void {
+  let x = x1;
+  let y = y1;
+  const height = map.length;
+  const width = map[0]?.length || 0;
+
+  while (x !== x2) {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      if (map[y][x].type === TileType.Wall) {
+        map[y][x] = createTile(TileType.Corridor, biome);
+      }
+    }
+    x += x < x2 ? 1 : -1;
+  }
+  while (y !== y2) {
+    if (x >= 0 && x < width && y >= 0 && y < height) {
+      if (map[y][x].type === TileType.Wall) {
+        map[y][x] = createTile(TileType.Corridor, biome);
+      }
+    }
+    y += y < y2 ? 1 : -1;
+  }
+}
+
+export function connectRooms(node: BSPNode, map: Tile[][], biome: Biome): void {
+  if (!node.left || !node.right) return;
+
+  connectRooms(node.left, map, biome);
+  connectRooms(node.right, map, biome);
+
+  const leftRooms = collectRooms(node.left).filter(r => r);
+  const rightRooms = collectRooms(node.right).filter(r => r);
+
+  if (leftRooms.length === 0 || rightRooms.length === 0) return;
+
+  let minDist = Infinity;
+  let bestLeft = leftRooms[0];
+  let bestRight = rightRooms[0];
+
+  for (const lr of leftRooms) {
+    for (const rr of rightRooms) {
+      const dist = Math.abs(lr.centerX - rr.centerX) + Math.abs(lr.centerY - rr.centerY);
+      if (dist < minDist) {
+        minDist = dist;
+        bestLeft = lr;
+        bestRight = rr;
+      }
+    }
+  }
+
+  carveCorridor(map, bestLeft.centerX, bestLeft.centerY, bestRight.centerX, bestRight.centerY, biome);
+}
+
+export function placeDoors(map: Tile[][], rooms: Room[], biome: Biome): void {
+  for (const room of rooms) {
+    for (let x = room.x; x < room.x + room.w; x++) {
+      tryDoor(map, x, room.y - 1, biome);
+      tryDoor(map, x, room.y + room.h, biome);
+    }
+    for (let y = room.y; y < room.y + room.h; y++) {
+      tryDoor(map, room.x - 1, y, biome);
+      tryDoor(map, room.x + room.w, y, biome);
+    }
+  }
+}
+
+export function tryDoor(map: Tile[][], x: number, y: number, biome: Biome): void {
+  const height = map.length;
+  const width = map[0]?.length || 0;
+  if (x < 1 || x >= width - 1 || y < 1 || y >= height - 1) return;
+  if (map[y][x].type !== TileType.Corridor && map[y][x].type !== TileType.Floor) return;
+  const isVertChoke = map[y][x - 1].type === TileType.Wall && map[y][x + 1].type === TileType.Wall;
+  const isHorizChoke = map[y - 1][x].type === TileType.Wall && map[y + 1][x].type === TileType.Wall;
+  if (isVertChoke || isHorizChoke) {
+    map[y][x] = createTile(TileType.Door, biome);
+  }
+}
+
+export function addEnvironment(map: Tile[][], rooms: Room[], biome: Biome, rng: SeededRandom, floor: number): void {
+  const config = BIOME_CONFIG[biome];
+  const height = map.length;
+  const width = map[0]?.length || 0;
+
+  if (config.hasWater || config.hasLava) {
+    for (const room of rooms) {
+      if (rng.chance(0.3)) {
+        const poolX = rng.nextInt(room.x + 1, room.x + room.w - 2);
+        const poolY = rng.nextInt(room.y + 1, room.y + room.h - 2);
+        const poolSize = rng.nextInt(1, 3);
+        for (let dy = 0; dy < poolSize; dy++) {
+          for (let dx = 0; dx < poolSize; dx++) {
+            const px = poolX + dx;
+            const py = poolY + dy;
+            if (px >= 0 && px < width && py >= 0 && py < height && map[py][px].walkable) {
+              map[py][px] = createTile(config.hasLava ? TileType.Lava : TileType.Water, biome);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (config.hasGas) {
+    for (const room of rooms) {
+      if (rng.chance(0.2)) {
+        const gx = rng.nextInt(room.x + 1, room.x + room.w - 2);
+        const gy = rng.nextInt(room.y + 1, room.y + room.h - 2);
+        if (map[gy][gx].walkable) {
+          map[gy][gx] = createTile(TileType.PoisonGas, biome);
+        }
+      }
+    }
+  }
+
+  for (const room of rooms) {
+    if (rng.chance(config.trapChance * (1 + floor * 0.05))) {
+      const trapTypes = [TileType.TrapSpike, TileType.TrapFire, TileType.TrapTeleport, TileType.TrapPoison];
+      const trapType = rng.pick(trapTypes);
+      const tx = rng.nextInt(room.x + 1, room.x + room.w - 2);
+      const ty = rng.nextInt(room.y + 1, room.y + room.h - 2);
+      if (map[ty][tx].type === TileType.Floor) {
+        map[ty][tx] = createTile(trapType, biome);
+      }
+    }
+  }
+}
+
+export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, enemyIds: string[]): { defId: string; pos: Position; isBoss: boolean }[] {
+  const count = Math.floor(ENEMIES_PER_FLOOR_BASE + ENEMIES_PER_FLOOR_GROWTH * Math.sqrt(floor));
+  const enemies: { defId: string; pos: Position; isBoss: boolean }[] = [];
+  const spawnRooms = rooms.slice(1);
+
+  for (let i = 0; i < count; i++) {
+    const room = rng.pick(spawnRooms);
+    if (!room) continue;
+    const pos = {
+      x: rng.nextInt(room.x + 1, room.x + room.w - 2),
+      y: rng.nextInt(room.y + 1, room.y + room.h - 2),
+    };
+    const defId = rng.pick(enemyIds);
+    enemies.push({ defId, pos, isBoss: false });
+  }
+
+  return enemies;
+}
+
+export function placeItems(rooms: Room[], floor: number, rng: SeededRandom, itemsBase: number, itemsGrowth: number): { defIndex: number; pos: Position }[] {
+  const count = Math.floor(itemsBase + itemsGrowth * Math.sqrt(floor));
+  const items: { defIndex: number; pos: Position }[] = [];
+  const spawnRooms = rooms.slice(1);
+
+  for (let i = 0; i < count; i++) {
+    const room = rng.pick(spawnRooms);
+    if (!room) continue;
+    const pos = {
+      x: rng.nextInt(room.x + 1, room.x + room.w - 2),
+      y: rng.nextInt(room.y + 1, room.y + room.h - 2),
+    };
+    items.push({ defIndex: i, pos });
+  }
+
+  return items;
+}
+
+// Router function that dispatches to biome-specific generators
+export function generateDungeon(floor: number, seed: number): DungeonData {
+  const biome = getBiomeForFloor(floor);
+  switch (biome) {
+    case Biome.StoneDungeon:
+      // Import dynamically to avoid circular dependency
+      return generateStoneDungeon(floor, seed);
+    case Biome.CrystalCavern:
+      return generateCrystalCave(floor, seed);
+    case Biome.AncientCrypt:
+      return generateCrypt(floor, seed);
+    case Biome.LavaCore:
+      return generateLavaCore(floor, seed);
+    case Biome.VoidAbyss:
+      return generateVoidAbyss(floor, seed);
+    // Other biomes will be added in later tasks
+    default:
+      return generateStoneDungeon(floor, seed);
+  }
+}
+
+// Helper function to place boss (used by all generators)
+export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId: string; pos: Position; isBoss: boolean } | null {
+  if (floor % 5 !== 0) return null;
+
+  const bossIndex = Math.floor(floor / 5) - 1;
+  const bossDef = BOSS_DEFS[Math.min(bossIndex, BOSS_DEFS.length - 1)];
+  if (!bossDef) return null;
+
+  const bossRoom = rooms.length > 2 ? rooms[rooms.length - 2] : rooms[rooms.length - 1];
+  return {
+    defId: bossDef.id,
+    pos: { x: bossRoom.centerX, y: bossRoom.centerY },
+    isBoss: true,
+  };
+}
