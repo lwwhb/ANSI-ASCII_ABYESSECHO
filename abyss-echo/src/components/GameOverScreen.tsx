@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { CLASS_DEFS, ACHIEVEMENT_DEFS } from '../constants';
 
@@ -11,6 +11,9 @@ const GameOverScreen: React.FC = () => {
   const isDailyChallenge = useGameStore(s => s.isDailyChallenge);
   const deathCause = useGameStore(s => s.deathCause);
   const restartGame = useGameStore(s => s.restartGame);
+
+  const [showAchievements, setShowAchievements] = useState(false);
+  const [showHighScores, setShowHighScores] = useState(false);
 
   if (!player) return null;
 
@@ -98,8 +101,44 @@ const GameOverScreen: React.FC = () => {
         )}
       </div>
 
-      {/* Achievements earned */}
-      {unlockedAchievements.length > 0 && (
+      {/* Toggle buttons for Achievements and High Scores */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
+        <button
+          onClick={() => { setShowAchievements(!showAchievements); setShowHighScores(false); }}
+          style={{
+            backgroundColor: showAchievements ? '#222244' : '#0d0d1a',
+            color: '#ffcc44',
+            border: `1px solid ${showAchievements ? '#ffcc44' : '#222244'}`,
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontFamily: '"Courier New", monospace',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          🏆 成就 ({unlockedAchievements.length}/{ACHIEVEMENT_DEFS.length})
+        </button>
+        <button
+          onClick={() => { setShowHighScores(!showHighScores); setShowAchievements(false); }}
+          style={{
+            backgroundColor: showHighScores ? '#222244' : '#0d0d1a',
+            color: '#ffcc44',
+            border: `1px solid ${showHighScores ? '#ffcc44' : '#222244'}`,
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontFamily: '"Courier New", monospace',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          📊 排行榜
+        </button>
+      </div>
+
+      {/* Achievements panel */}
+      {showAchievements && unlockedAchievements.length > 0 && (
         <div style={{
           backgroundColor: '#0d0d1a',
           border: '1px solid #222244',
@@ -108,22 +147,16 @@ const GameOverScreen: React.FC = () => {
           marginBottom: '16px',
           minWidth: '300px',
         }}>
-          <div style={{ color: '#ffcc44', fontSize: '14px', marginBottom: '8px', textAlign: 'center' }}>
-            🏆 成就 ({unlockedAchievements.length}/{ACHIEVEMENT_DEFS.length})
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-            {unlockedAchievements.slice(0, 8).map((a) => (
-              <span key={a.id} style={{ fontSize: '16px' }} title={a.nameZh}>{a.icon}</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center' }}>
+            {unlockedAchievements.map((a) => (
+              <span key={a.id} style={{ fontSize: '16px' }} title={`${a.nameZh}: ${a.description}`}>{a.icon}</span>
             ))}
-            {unlockedAchievements.length > 8 && (
-              <span style={{ color: '#666677', fontSize: '12px' }}>+{unlockedAchievements.length - 8}...</span>
-            )}
           </div>
         </div>
       )}
 
-      {/* High Scores */}
-      {highScores.length > 0 && (
+      {/* High Scores panel */}
+      {showHighScores && highScores.length > 0 && (
         <div style={{
           backgroundColor: '#0d0d1a',
           border: '1px solid #222244',
@@ -132,9 +165,6 @@ const GameOverScreen: React.FC = () => {
           marginBottom: '16px',
           minWidth: '300px',
         }}>
-          <div style={{ color: '#ffcc44', fontSize: '14px', marginBottom: '8px', textAlign: 'center' }}>
-            排行榜
-          </div>
           {highScores.slice(0, 5).map((score, i) => (
             <div key={i} style={{
               display: 'flex',

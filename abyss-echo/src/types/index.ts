@@ -418,6 +418,9 @@ export interface GameState {
   extraTurnCost: number;
   deathCause: string;
   warningPulse: 'none' | 'lowHp' | 'hunger' | 'both';
+  pendingIdentify: boolean;
+  pendingSacrifice: boolean;
+  pendingAllocations: Partial<Stats>;
 }
 
 export interface HighScore {

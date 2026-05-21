@@ -2,7 +2,7 @@ import React from 'react';
 import { Item, ItemType, WeaponItem, ArmorItem } from '../types';
 import { useGameStore } from '../store/gameStore';
 import { getEffectiveStats } from '../entities/Player';
-import { CLASS_DEFS, RARITY_COLORS, SKILL_DEFS, TALENT_DEFS } from '../constants';
+import { CLASS_DEFS, RARITY_COLORS, SKILL_DEFS, TALENT_DEFS, BIOME_CONFIG, getBiomeForFloor } from '../constants';
 import MiniMap from './MiniMap';
 
 const StatsPanel: React.FC = () => {
@@ -53,7 +53,7 @@ const StatsPanel: React.FC = () => {
         current={player.hunger}
         max={player.maxHunger}
         percent={hungerPercent}
-        color={hungerPercent < 25 ? '#cc8844' : '#44aa44'}
+        color={hungerPercent <= 0 ? '#ff2222' : hungerPercent < 5 ? '#ff4422' : hungerPercent < 15 ? '#cc6622' : hungerPercent < 25 ? '#cc8844' : '#44aa44'}
         bgColor="#223322"
       />
 
@@ -135,7 +135,7 @@ const StatsPanel: React.FC = () => {
 
       {/* Floor & Turn Info */}
       <div style={{ marginTop: '12px', borderTop: '1px solid #222244', paddingTop: '8px' }}>
-        <div>楼层: <span style={{ color: '#ffcc44' }}>B{currentFloor}F</span></div>
+        <div>楼层: <span style={{ color: '#ffcc44' }}>B{currentFloor}F</span> <span style={{ color: '#888899', fontSize: '11px' }}>{BIOME_CONFIG[getBiomeForFloor(currentFloor)].nameZh}</span></div>
         <div>回合: <span style={{ color: '#888899' }}>{turn}</span></div>
         <div>击杀: <span style={{ color: '#ff4444' }}>{player.killCount}</span></div>
       </div>

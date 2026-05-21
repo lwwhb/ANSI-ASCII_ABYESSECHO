@@ -9,7 +9,7 @@ import {
   splitBSP, createRooms, collectRooms,
   carveRoom, carveCorridor, connectRooms,
   placeDoors, addEnvironment,
-  placeEnemies, placeItems, placeBoss,
+  placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs,
 } from './DungeonGenerator';
 
@@ -98,7 +98,7 @@ export function generateStoneDungeon(floor: number, seed: number): DungeonData {
   }
 
   const boss = placeBoss(rooms, floor, biome);
-  if (boss) enemies.push(boss);
+  if (boss) { enemies.push(boss); markBossRoom(map, boss.bossRoom, biome); }
 
   return { map, rooms, playerStart, stairsDown, enemies, items, shopPos, eventPos };
 }

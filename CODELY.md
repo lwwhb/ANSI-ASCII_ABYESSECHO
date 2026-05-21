@@ -2,7 +2,7 @@
 
 ## Overview
 
-This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.1**.
+This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.3**.
 
 ## Repository Structure
 
@@ -102,7 +102,7 @@ All commands run from `abyss-echo/`:
 - `loadGame()` restores state, rebuilds FOV via `updateFOV()`, then **immediately deletes save** (anti save-scumming)
 - `deleteSave(reason)` called on: load, death (`handlePlayerDeath`), corruption (parse failure)
 - `suspendAndQuit()` — ESC key → confirm → save → return to title
-- Save data includes `version: "1.3.1"` field for future migration
+- Save data includes `version: "1.3.3"` field for future migration
 - `deathCause: string` in `GameState` — composed at death time, displayed on GameOverScreen; reset on restart/load
 - `GameState` fields are all JSON-serializable (no Maps/Sets/functions); `visibleTiles`/`rememberedMap` are in `GameStore` but not `GameState`, rebuilt on load
 
@@ -171,3 +171,13 @@ All commands run from `abyss-echo/`:
 - SpellPenetration talent: implemented via `hasSpellPenetration` parameter in `calculateMagicDamage()`, reduces enemy defense by 50% for magic damage calculation
 - AoE kill tracking: scroll/skill AoE kills use `aliveBefore`/`hitIds` Sets to avoid double-counting already-dead enemies for exp/gold/bossKillCount
 - Scroll kill rewards: Fireball/IceStorm/Lightning scrolls now grant gold drops and talent-modified exp (previously only granted raw exp + killCount)
+- CombatResult split damage: `physicalDamage` and `elementalDamage` fields in CombatResult allow melee attack messages to display "X 物理 + Y🔥火" format; total damage still in `damage` field
+- Poison message details: all poison effects (poison blade, toxic blade talent, enemy poison/poisonSting/eldritch) now show specific damage/duration like "(☠5伤害/4回合)"
+- Boss room visual: `markBossRoom()` sets special `bg` on boss room floor tiles (biome-themed dark colors); `placeBoss()` returns `bossRoom` info for generators to call `markBossRoom()`
+- Wall rendering: all biome wall `bg` colors match `fg` to eliminate character rendering gaps (seamless walls)
+- Crystal cave side-caves: 2-3 small caves with narrow tunnels added at cave periphery, connected to main cave
+- Crypt pillars: 3-5 rooms get 2-4 stone pillars (wall tiles with `▓` char), creating corridor-style combat in larger rooms
+- Lava irregular islands: island edges have random corner bites (60%) and edge bites (25%), plus 1-3 protrusions
+- GameOverScreen: achievements and high scores are toggle buttons (mutually exclusive), not always-visible panels
+- closeShop BGM fix: `closeShop()` now calls `setPhase(Playing)` instead of directly setting phase, ensuring BGM context update
+- Cursed item selling: cursed items can be sold at 1/4 price (was blocked entirely)

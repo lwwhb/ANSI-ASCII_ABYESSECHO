@@ -73,7 +73,7 @@ function saveLegacyItem(item: Item | null) {
 // Suspend Save System
 // ============================================================
 const SAVE_KEY = 'abyss-echo-save';
-const SAVE_VERSION = '1.3.1';
+const SAVE_VERSION = '1.3.3';
 
 function saveGame(state: GameStore) {
   try {
@@ -83,7 +83,7 @@ function saveGame(state: GameStore) {
       isDailyChallenge, shopItems, currentEvent,
       skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
       voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
-      extraTurnCost, deathCause, warningPulse } = state;
+      extraTurnCost, deathCause, warningPulse, pendingIdentify, pendingSacrifice, pendingAllocations } = state;
     const saveData = {
       version: SAVE_VERSION,
       state: {
@@ -92,7 +92,7 @@ function saveGame(state: GameStore) {
         isDailyChallenge, shopItems, currentEvent,
         skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
         voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
-        extraTurnCost, deathCause, warningPulse,
+        extraTurnCost, deathCause, warningPulse, pendingIdentify, pendingSacrifice, pendingAllocations,
         screenFlash: null,
       },
     };
@@ -220,13 +220,17 @@ interface GameStore extends GameState {
   waitTurn: () => void;
   pickupItem: () => void;
   useItem: (index: number) => void;
-  equipItem: (index: number) => void;
+  equipItem: (index: number, targetSlot?: EquipmentSlot) => void;
   dropItem: (index: number) => void;
   sellItem: (index: number) => void;
   descendStairs: () => void;
   openDoor: (dx: number, dy: number) => void;
   allocateStat: (stat: keyof Stats) => void;
+  deallocateStat: (stat: keyof Stats) => void;
+  resetAllocations: () => void;
   toggleInventory: () => void;
+  confirmIdentify: (index: number) => void;
+  confirmSacrifice: (index: number) => void;
   confirmLevelUp: () => void;
   selectTalent: (talentId: string) => void;
   useSkill: (skillIndex: number) => void;
@@ -276,6 +280,9 @@ const initialState: GameState = {
   extraTurnCost: 0,
   deathCause: '',
   warningPulse: 'none' as const,
+  pendingIdentify: false,
+  pendingSacrifice: false,
+  pendingAllocations: { str: 0, dex: 0, int: 0, vit: 0 },
 };
 
 export const useGameStore = create<GameStore>((set, get) => {
@@ -374,6 +381,10 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (player2.hunger <= 0) {
         player2.hunger = 0;
         player2.hp -= HUNGER_STARVE_DAMAGE;
+        if (player2.hp <= 0) {
+          handlePlayerDeath(player2, enemies2, msgs2, '饥饿致死');
+          return;
+        }
       }
 
       // Process enemy turns
@@ -401,14 +412,38 @@ export const useGameStore = create<GameStore>((set, get) => {
           }
         } else if (er === 'special' && enemies2[i].specialAbility) {
           handleSpecialAbility(enemies2[i], player2, enemies2, msgs2, rng2);
+          if (player2.hp <= 0) {
+            handlePlayerDeath(player2, enemies2, msgs2, `被${enemies2[i].name}击杀`);
+            return;
+          }
         }
       }
 
+      // Warning pulse on extra turn
+      const isLowHp2 = player2.hp / player2.maxHp < 0.3;
+      const isStarving2 = player2.hunger <= 0;
+      let warningPulse2: GameState['warningPulse'] = 'none';
+      if (isLowHp2 && isStarving2) {
+        warningPulse2 = 'both';
+      } else if (isLowHp2) {
+        warningPulse2 = 'lowHp';
+      } else if (isStarving2) {
+        warningPulse2 = 'hunger';
+      }
+      const extraTurn = s2.turn + 1;
+      if (isLowHp2) {
+        AudioManager.playSFX('heartbeat');
+      }
+      if (isStarving2) {
+        AudioManager.playSFX('stomachGrowl');
+      }
+
       set({
-        turn: s2.turn + 1,
+        turn: extraTurn,
         player: player2,
         enemies: enemies2.filter(e => e.hp > 0),
         messages: [...s2.messages.slice(-100), ...msgs2],
+        warningPulse: warningPulse2,
       });
       updateFOV();
       return;
@@ -442,15 +477,23 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     // Hunger
     const hungerRate = getTalentModifiedHungerRate(player);
+    const prevHunger = player.hunger;
     player.hunger -= hungerRate;
     if (player.hunger <= 0) {
       player.hunger = 0;
       player.hp -= HUNGER_STARVE_DAMAGE;
-      // Only show starvation message when first dropping from above 0
-      if (player.hunger === 0 && state.player.hunger > 0) {
+      if (prevHunger > 0) {
         messages.push(msg('你饥饿难耐，生命在流逝...', MessageCategory.System, '#ff8844'));
+      } else if ((state.turn + 1) % 3 === 0) {
+        messages.push(msg('饥饿仍在侵蚀你的生命...', MessageCategory.System, '#ff6622'));
       }
-    } else if (player.hunger < 30 && player.hunger > 28) {
+    } else if (prevHunger >= 20 && player.hunger < 20) {
+      messages.push(msg('你的肚子咕咕叫，需要尽快进食！', MessageCategory.System, '#ffaa44'));
+    } else if (prevHunger >= 10 && player.hunger < 10) {
+      messages.push(msg('⚠ 饥饿感越来越强烈！', MessageCategory.System, '#ff8844'));
+    } else if (prevHunger >= 5 && player.hunger < 5) {
+      messages.push(msg('⚠ 你快要饿死了！赶紧吃东西！', MessageCategory.System, '#ff4422'));
+    } else if (prevHunger >= 30 && player.hunger < 30) {
       messages.push(msg('你感到饥饿...', MessageCategory.System, '#ffaa44'));
     }
 
@@ -458,7 +501,12 @@ export const useGameStore = create<GameStore>((set, get) => {
     if (hasTalent(player, 'regeneration') && player.hp < player.maxHp) {
       player.hp = Math.min(player.maxHp, player.hp + 1);
     }
-    // Meditation talent
+    // Natural MP regen: INT/5 per turn
+    if (player.mp < player.maxMp) {
+      const mpRegen = Math.max(1, Math.floor(player.stats.int / 5));
+      player.mp = Math.min(player.maxMp, player.mp + mpRegen);
+    }
+    // Meditation talent: additional +1 MP per turn
     if (hasTalent(player, 'meditation') && player.mp < player.maxMp) {
       player.mp = Math.min(player.maxMp, player.mp + 1);
     }
@@ -547,6 +595,8 @@ export const useGameStore = create<GameStore>((set, get) => {
             player.exp += exp;
             player.gold += goldDrop;
             player.killCount++;
+            // Kill MP regen: INT/2 per kill
+            if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
             if (enemies[i].isBoss) player.bossKillCount++;
             messages.push(msg(`${enemies[i].name}被效果杀死了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
             AudioManager.playSFX('coin');
@@ -568,6 +618,10 @@ export const useGameStore = create<GameStore>((set, get) => {
           } else if (actionResult === 'special') {
             if (enemy.specialAbility) {
               handleSpecialAbility(enemy, player, enemies, messages, rng);
+            }
+            if (player.hp <= 0) {
+              handlePlayerDeath(player, enemies, messages, `被${enemy.name}击杀`);
+              return;
             }
           } else if (actionResult === 'attack') {
             const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player);
@@ -613,10 +667,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     } else if (isStarving) {
       warningPulse = 'hunger';
     }
-    if (isLowHp && newTurn % 3 === 0) {
+    if (isLowHp) {
       AudioManager.playSFX('heartbeat');
     }
-    if (isStarving && newTurn % 5 === 0) {
+    if (isStarving) {
       AudioManager.playSFX('stomachGrowl');
     }
 
@@ -628,9 +682,9 @@ export const useGameStore = create<GameStore>((set, get) => {
       flashScreen('#ffcc44');
 
       if (isTalentLevel(player.level)) {
-        set({ player, enemies, phase: GamePhase.TalentSelection });
+        set({ player, enemies, phase: GamePhase.TalentSelection, pendingAllocations: { str: 0, dex: 0, int: 0, vit: 0 } });
       } else {
-        set({ player, enemies, phase: GamePhase.LevelUp });
+        set({ player, enemies, phase: GamePhase.LevelUp, pendingAllocations: { str: 0, dex: 0, int: 0, vit: 0 } });
       }
     } else {
       set({ player, enemies });
@@ -671,7 +725,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'fireball': {
         const damage = Math.floor(enemy.attack * 1.5);
         player.hp -= damage;
-        messages.push(msg(`${enemy.name}释放了火球术！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff6644'));
+        messages.push(msg(`${enemy.name}释放了火球术！造成 ${damage} 点🔥火伤害！`, MessageCategory.Combat, '#ff6644'));
         break;
       }
       case 'drain': {
@@ -683,7 +737,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
       case 'poison': {
         player.statusEffects.push({ type: StatusEffectType.Poison, duration: 4, damage: 3 });
-        messages.push(msg(`${enemy.name}释放了毒雾！`, MessageCategory.Combat, '#44cc44'));
+        messages.push(msg(`${enemy.name}释放了毒雾！你中毒了！(☠3伤害/4回合)`, MessageCategory.Combat, '#44cc44'));
         break;
       }
       case 'petrify': {
@@ -720,7 +774,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'breath': {
         const damage = Math.floor(enemy.attack * 1.8);
         player.hp -= damage;
-        messages.push(msg(`${enemy.name}喷出了龙息！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4422'));
+        messages.push(msg(`${enemy.name}喷出了龙息！造成 ${damage} 点🔥火伤害！`, MessageCategory.Combat, '#ff4422'));
         break;
       }
       case 'teleport': {
@@ -739,8 +793,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         player.hp -= damage;
         if (rng.chance(0.4)) {
           player.statusEffects.push({ type: StatusEffectType.Poison, duration: 5, damage: 4 });
+          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！你中毒了！(☠4伤害/5回合)`, MessageCategory.Combat, '#cc44ff'));
+        } else {
+          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！`, MessageCategory.Combat, '#cc44ff'));
         }
-        messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#cc44ff'));
         break;
       }
       case 'surprise': {
@@ -764,7 +820,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'poisonSting': {
         if (rng.chance(0.2)) {
           player.statusEffects.push({ type: StatusEffectType.Poison, duration: 3, damage: 2 });
-          messages.push(msg(`${enemy.name}的毒刺扎中了你！`, MessageCategory.Combat, '#44cc44'));
+          messages.push(msg(`${enemy.name}的毒刺扎中了你！你中毒了！(☠2伤害/3回合)`, MessageCategory.Combat, '#44cc44'));
         }
         break;
       }
@@ -889,6 +945,9 @@ export const useGameStore = create<GameStore>((set, get) => {
       extraTurnCost: 0,
     });
 
+    // Clear remembered map from previous floor
+    set({ rememberedMap: new Map<string, { char: string; fg: string; bg: string }>() });
+
     addMessages([
       msg(`你来到了第 ${floor} 层 - ${biomeConfig.nameZh}`, MessageCategory.Story, '#ffcc44'),
     ]);
@@ -993,31 +1052,36 @@ export const useGameStore = create<GameStore>((set, get) => {
         const weaponElement = getPlayerWeaponElement(player);
         let result = calculateMeleeDamage(stats, weaponDmg, enemy, weaponElement, rng);
 
-        // Apply talent: Blood Fury
+        // Apply talent: Blood Fury (physical bonus)
         const bloodFuryBonus = getTalentBloodFuryAttack(player);
-        if (bloodFuryBonus > 0) result = { ...result, damage: result.damage + bloodFuryBonus };
+        if (bloodFuryBonus > 0) result = { ...result, damage: result.damage + bloodFuryBonus, physicalDamage: result.physicalDamage + bloodFuryBonus };
 
         // Apply talent: Deadly Strike (crit multiplier)
         if (result.critical) {
           const critMult = getTalentModifiedCritMultiplier(player);
-          result = { ...result, damage: Math.floor(result.damage * critMult / 1.5) };
+          const ratio = critMult / 1.5;
+          result = { ...result, damage: Math.floor(result.damage * ratio), physicalDamage: Math.floor(result.physicalDamage * ratio), elementalDamage: Math.floor(result.elementalDamage * ratio) };
         }
 
-        // Apply talent: Elemental Affinity
+        // Apply talent: Elemental Affinity (elemental bonus)
         if (weaponElement !== Element.None) {
-          result = { ...result, damage: getTalentModifiedElementalDamage(player, result.damage) };
+          const oldDamage = result.damage;
+          const newDamage = getTalentModifiedElementalDamage(player, result.damage);
+          const extraElemental = newDamage - oldDamage;
+          result = { ...result, damage: newDamage, elementalDamage: result.elementalDamage + extraElemental };
         }
 
         // Apply poison blade buff
         if (player.statusEffects.some(e => e.type === StatusEffectType.PoisonBlade)) {
           enemy.statusEffects = [...enemy.statusEffects, { type: StatusEffectType.Poison, duration: 4, damage: 5 }];
           player.statusEffects = player.statusEffects.filter(e => e.type !== StatusEffectType.PoisonBlade);
-          addMessages([msg('毒刃生效！敌人中毒了！', MessageCategory.Combat, '#44cc44')]);
+          addMessages([msg('毒刃生效！敌人中毒了！(☠5伤害/4回合)', MessageCategory.Combat, '#44cc44')]);
         }
 
         // Apply talent: Toxic Blade (random poison on hit)
         if (hasTalent(player, 'toxicBlade') && rng.chance(0.2)) {
           enemy.statusEffects = [...enemy.statusEffects, { type: StatusEffectType.Poison, duration: 3, damage: 2 }];
+          addMessages([msg('淬毒生效！敌人中毒了！(☠2伤害/3回合)', MessageCategory.Combat, '#44cc44')]);
         }
 
         const newHp = enemy.hp - result.damage;
@@ -1033,11 +1097,19 @@ export const useGameStore = create<GameStore>((set, get) => {
         });
 
         const messages: Message[] = [];
+        const elemZh: Record<string, string> = { fire: '🔥火', ice: '❄冰', lightning: '⚡雷', poison: '☠毒' };
+        // Build damage label: split physical + elemental
+        let dmgLabel: string;
+        if (result.elementalDamage > 0 && result.element !== Element.None && elemZh[result.element]) {
+          dmgLabel = `${result.physicalDamage} + ${result.elementalDamage}${elemZh[result.element]}`;
+        } else {
+          dmgLabel = `${result.damage}`;
+        }
         if (result.critical) {
-          messages.push(msg(`暴击！你攻击了${enemy.name}，造成 ${result.damage} 点伤害！`, MessageCategory.Combat, '#ffcc44'));
+          messages.push(msg(`暴击！你攻击了${enemy.name}，造成 ${dmgLabel} 点伤害！`, MessageCategory.Combat, '#ffcc44'));
           AudioManager.playSFX('critical');
         } else {
-          messages.push(msg(`你攻击了${enemy.name}，造成 ${result.damage} 点伤害`, MessageCategory.Combat, '#ff8844'));
+          messages.push(msg(`你攻击了${enemy.name}，造成 ${dmgLabel} 点伤害`, MessageCategory.Combat, '#ff8844'));
           AudioManager.playSFX('attack');
         }
 
@@ -1059,10 +1131,18 @@ export const useGameStore = create<GameStore>((set, get) => {
           const goldDrop = getTalentModifiedGoldDrop(player, enemy.goldDrop);
           player.exp += exp;
           player.killCount++;
+          // Kill MP regen: INT/2 per kill
+          if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
           if (enemy.isBoss) player.bossKillCount++;
           player.gold += goldDrop;
           messages.push(msg(`${enemy.name}被击败了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
           AudioManager.playSFX('coin');
+
+          // Switch music back to biome BGM after boss death
+          if (enemy.isBoss) {
+            const biome = getBiomeForFloor(state.currentFloor);
+            AudioManager.updateContext('playing', state.currentFloor, false, biome);
+          }
 
           // Mirror Image explosion on death
           if (enemy.specialAbility === 'mirrorExplode') {
@@ -1292,9 +1372,9 @@ export const useGameStore = create<GameStore>((set, get) => {
             const itemName = getItemName(pickedItem);
             items.splice(i, 1);
 
-            // Auto-equip: if equippable and the slot is empty (no cursed item check needed since slot is empty)
+            // Auto-equip: if equippable and the slot is empty (skip cursed items)
             const slot = canEquipItem(player, pickedItem);
-            if (slot && !player.equipment[slot]) {
+            if (slot && !player.equipment[slot] && !pickedItem.cursed) {
               player.inventory = [...player.inventory, pickedItem];
               player = equipItem(player, pickedItem);
               messages.push(msg(`你拾取并装备了${itemName}`, MessageCategory.Item, '#4488ff'));
@@ -1402,10 +1482,14 @@ export const useGameStore = create<GameStore>((set, get) => {
             case ScrollEffect.Identify: {
               const unidentified = player.inventory.filter(i => !i.identified);
               if (unidentified.length > 0) {
-                const target = unidentified[0];
-                const identified = identifyItem(target);
-                player.inventory = player.inventory.map(i => i.id === target.id ? identified : i);
-                messages.push(msg(`你鉴定了${identified.name}！`, MessageCategory.Item, '#ffcc44'));
+                if (unidentified.length === 1) {
+                  const identified = identifyItem(unidentified[0]);
+                  player.inventory = player.inventory.map(i => i.id === identified.id ? identified : i);
+                  messages.push(msg(`你鉴定了${identified.name}！`, MessageCategory.Item, '#ffcc44'));
+                } else {
+                  messages.push(msg('请选择要鉴定的物品...', MessageCategory.Item, '#ffcc44'));
+                  set({ pendingIdentify: true, phase: GamePhase.Inventory });
+                }
               } else {
                 messages.push(msg('没有需要鉴定的物品', MessageCategory.System, '#888888'));
               }
@@ -1454,6 +1538,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               for (const e of killed) {
                 player.exp += getTalentModifiedExp(player, e.exp);
                 player.killCount++;
+                if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
                 if (e.isBoss) player.bossKillCount++;
                 player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
               }
@@ -1476,6 +1561,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               for (const e of killed) {
                 player.exp += getTalentModifiedExp(player, e.exp);
                 player.killCount++;
+                if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
                 if (e.isBoss) player.bossKillCount++;
                 player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
               }
@@ -1495,6 +1581,7 @@ export const useGameStore = create<GameStore>((set, get) => {
                 if (closest.hp - power <= 0) {
                   player.exp += getTalentModifiedExp(player, closest.exp);
                   player.killCount++;
+                  if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
                   if (closest.isBoss) player.bossKillCount++;
                   player.gold += getTalentModifiedGoldDrop(player, closest.goldDrop);
                 }
@@ -1577,7 +1664,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       processTurn();
     },
 
-    equipItem: (index: number) => {
+    equipItem: (index: number, targetSlot?: EquipmentSlot) => {
       const state = get();
       if (!state.player) return;
       if (state.phase !== GamePhase.Playing && state.phase !== GamePhase.Inventory) return;
@@ -1585,13 +1672,13 @@ export const useGameStore = create<GameStore>((set, get) => {
       const item = state.player.inventory[index];
       if (!item) return;
 
-      const slot = canEquipItem(state.player, item);
+      const slot = targetSlot ?? canEquipItem(state.player, item);
       if (!slot) {
         addMessages([msg('这个物品无法装备', MessageCategory.System, '#888888')]);
         return;
       }
 
-      const player = equipItem(state.player, item);
+      const player = equipItem(state.player, item, slot);
       set({ player });
       addMessages([msg(`你装备了${getItemName(item)}`, MessageCategory.Item, '#4488ff')]);
     },
@@ -1627,12 +1714,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       const item = player.inventory[index];
       if (!item) return;
 
-      if (item.cursed) {
-        addMessages([msg('诅咒物品无法出售！', MessageCategory.System, '#ff4444')]);
-        return;
-      }
-
-      const sellPrice = Math.floor(item.value / 2);
+      const sellPrice = item.cursed ? Math.max(1, Math.floor(item.value / 4)) : Math.floor(item.value / 2);
       player.gold += sellPrice;
       player.inventory = player.inventory.filter((_, i) => i !== index);
 
@@ -1688,22 +1770,90 @@ export const useGameStore = create<GameStore>((set, get) => {
       const player = { ...state.player };
       player.stats = { ...player.stats, [stat]: player.stats[stat] + 1 };
       player.statPoints--;
+      const pendingAllocations = { ...state.pendingAllocations, [stat]: (state.pendingAllocations[stat] || 0) + 1 };
 
       const classDef = CLASS_DEFS[player.class];
       player.maxHp = classDef.baseHp + player.stats.vit * 3 + (player.level - 1) * classDef.hpPerLevel;
       player.maxMp = classDef.baseMp + player.stats.int * 2 + (player.level - 1) * classDef.mpPerLevel;
 
-      set({ player });
+      set({ player, pendingAllocations });
       addMessages([msg(`${stat.toUpperCase()} +1`, MessageCategory.System, '#ffcc44')]);
+    },
+
+    deallocateStat: (stat: keyof Stats) => {
+      const state = get();
+      if (!state.player || !state.pendingAllocations[stat] || (state.pendingAllocations[stat] || 0) <= 0) return;
+
+      const player = { ...state.player };
+      player.stats = { ...player.stats, [stat]: player.stats[stat] - 1 };
+      player.statPoints++;
+      const pendingAllocations = { ...state.pendingAllocations, [stat]: (state.pendingAllocations[stat] || 0) - 1 };
+
+      const classDef = CLASS_DEFS[player.class];
+      player.maxHp = classDef.baseHp + player.stats.vit * 3 + (player.level - 1) * classDef.hpPerLevel;
+      player.maxMp = classDef.baseMp + player.stats.int * 2 + (player.level - 1) * classDef.mpPerLevel;
+
+      set({ player, pendingAllocations });
+    },
+
+    resetAllocations: () => {
+      const state = get();
+      if (!state.player) return;
+
+      const player = { ...state.player };
+      const pa = state.pendingAllocations;
+      // Reverse all pending allocations
+      if (pa.str) { player.stats = { ...player.stats, str: player.stats.str - pa.str }; player.statPoints += pa.str; }
+      if (pa.dex) { player.stats = { ...player.stats, dex: player.stats.dex - pa.dex }; player.statPoints += pa.dex; }
+      if (pa.int) { player.stats = { ...player.stats, int: player.stats.int - pa.int }; player.statPoints += pa.int; }
+      if (pa.vit) { player.stats = { ...player.stats, vit: player.stats.vit - pa.vit }; player.statPoints += pa.vit; }
+
+      const classDef = CLASS_DEFS[player.class];
+      player.maxHp = classDef.baseHp + player.stats.vit * 3 + (player.level - 1) * classDef.hpPerLevel;
+      player.maxMp = classDef.baseMp + player.stats.int * 2 + (player.level - 1) * classDef.mpPerLevel;
+
+      set({ player, pendingAllocations: { str: 0, dex: 0, int: 0, vit: 0 } });
     },
 
     toggleInventory: () => {
       const state = get();
-      if (state.phase === GamePhase.Playing) {
-        set({ phase: GamePhase.Inventory });
-      } else if (state.phase === GamePhase.Inventory) {
-        set({ phase: GamePhase.Playing });
+      if (state.phase === GamePhase.Playing || state.phase === GamePhase.Inventory) {
+        set({ phase: state.phase === GamePhase.Playing ? GamePhase.Inventory : GamePhase.Playing, pendingIdentify: false, pendingSacrifice: false });
       }
+    },
+
+    confirmIdentify: (index: number) => {
+      const state = get();
+      if (!state.player || !state.pendingIdentify) return;
+
+      const player = { ...state.player };
+      const item = player.inventory[index];
+      if (!item || item.identified) {
+        addMessages([msg('请选择未鉴定的物品', MessageCategory.System, '#888888')]);
+        return;
+      }
+
+      const identified = identifyItem(item);
+      player.inventory = player.inventory.map(i => i.id === identified.id ? identified : i);
+      addMessages([msg(`你鉴定了${identified.name}！`, MessageCategory.Item, '#ffcc44')]);
+      set({ player, pendingIdentify: false, phase: GamePhase.Playing });
+    },
+
+    confirmSacrifice: (index: number) => {
+      const state = get();
+      if (!state.player || !state.pendingSacrifice) return;
+
+      const player = { ...state.player };
+      const item = player.inventory[index];
+      if (!item || (item.type !== ItemType.Potion && item.type !== ItemType.Food)) {
+        addMessages([msg('请选择消耗品进行献祭', MessageCategory.System, '#888888')]);
+        return;
+      }
+
+      player.inventory = player.inventory.filter(i => i.id !== item.id);
+      player.bonusStats = { ...player.bonusStats, vit: player.bonusStats.vit + 1 };
+      addMessages([msg(`献祭了${getItemName(item)}！活力永久+1！`, MessageCategory.Item, '#ffcc44')]);
+      set({ player, pendingSacrifice: false, phase: GamePhase.Playing });
     },
 
     confirmLevelUp: () => {
@@ -1713,7 +1863,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         addMessages([msg(`还有 ${state.player.statPoints} 点属性点未分配！`, MessageCategory.System, '#ffcc44')]);
         return;
       }
-      set({ phase: GamePhase.Playing });
+      set({ phase: GamePhase.Playing, pendingAllocations: { str: 0, dex: 0, int: 0, vit: 0 } });
     },
 
     selectTalent: (talentId: string) => {
@@ -1812,6 +1962,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           for (const e of enemies.filter(e2 => e2.hp <= 0 && whirlHitIds.has(e2.id))) {
             player.exp += getTalentModifiedExp(player, e.exp);
             player.killCount++;
+            if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
             if (e.isBoss) player.bossKillCount++;
             player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
           }
@@ -1834,7 +1985,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             });
             messages.push(msg(fbCrit ? `暴击！火球术！造成 ${dmg} 点火焰伤害！` : `火球术！造成 ${dmg} 点火焰伤害！`, MessageCategory.Combat, fbCrit ? '#ffcc44' : '#ff6644'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && fbHitIds.has(e2.id))) {
-              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
           } else {
             messages.push(msg('范围内没有敌人！', MessageCategory.System, '#888888'));
@@ -1861,7 +2012,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             enemies = enemies.map(e => hitIds.has(e.id) ? { ...e, hp: e.hp - dmg } : e);
             messages.push(msg(clCrit ? `暴击！闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！` : `闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！`, MessageCategory.Combat, clCrit ? '#ffcc44' : '#cccc44'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && hitIds.has(e2.id))) {
-              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
           } else {
             messages.push(msg('范围内没有敌人！', MessageCategory.System, '#888888'));
@@ -1891,7 +2042,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               enemies = enemies.map(e => e.id === target.id ? { ...e, hp: e.hp - critDmg } : e);
               messages.push(msg(`暗影步！瞬移到${target.name}身边，暴击造成 ${critDmg} 点伤害！`, MessageCategory.Combat, '#8844ff'));
               if (target.hp - critDmg <= 0) {
-                player.exp += getTalentModifiedExp(player, target.exp); player.killCount++; if (target.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, target.goldDrop);
+                player.exp += getTalentModifiedExp(player, target.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (target.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, target.goldDrop);
               }
             } else {
               messages.push(msg('无法瞬移到目标身边！', MessageCategory.System, '#888888'));
@@ -1924,7 +2075,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           });
           messages.push(msg(fokCrit ? `暴击！扇刃！对 ${hitCount} 个敌人造成 ${dmg} 点伤害！` : `扇刃！对 ${hitCount} 个敌人造成 ${dmg} 点伤害！`, MessageCategory.Combat, fokCrit ? '#ffcc44' : '#aaaaaa'));
           for (const e of enemies.filter(e2 => e2.hp <= 0 && fokHitIds.has(e2.id))) {
-            player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+            player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
           }
           break;
         }
@@ -1981,7 +2132,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     closeShop: () => {
-      set({ phase: GamePhase.Playing });
+      get().setPhase(GamePhase.Playing);
     },
 
     chooseEventChoice: (choiceIndex: number) => {
@@ -2050,10 +2201,15 @@ export const useGameStore = create<GameStore>((set, get) => {
         case 'altar_item': {
           const consumables = player.inventory.filter(i => i.type === ItemType.Potion || i.type === ItemType.Food);
           if (consumables.length > 0) {
-            const sacrificed = consumables[0];
-            player.inventory = player.inventory.filter(i => i.id !== sacrificed.id);
-            player.bonusStats = { ...player.bonusStats, vit: player.bonusStats.vit + 1 };
-            messages.push(msg(`献祭了${getItemName(sacrificed)}！活力永久+1！`, MessageCategory.Item, '#ffcc44'));
+            if (consumables.length === 1) {
+              const sacrificed = consumables[0];
+              player.inventory = player.inventory.filter(i => i.id !== sacrificed.id);
+              player.bonusStats = { ...player.bonusStats, vit: player.bonusStats.vit + 1 };
+              messages.push(msg(`献祭了${getItemName(sacrificed)}！活力永久+1！`, MessageCategory.Item, '#ffcc44'));
+            } else {
+              messages.push(msg('请选择要献祭的消耗品...', MessageCategory.Item, '#ffcc44'));
+              set({ pendingSacrifice: true, phase: GamePhase.Inventory });
+            }
           } else {
             messages.push(msg('没有可献祭的消耗品！', MessageCategory.System, '#888888'));
           }
@@ -2245,6 +2401,9 @@ export const useGameStore = create<GameStore>((set, get) => {
         extraTurnCost: loadedState.extraTurnCost ?? 0,
         deathCause: '',
         warningPulse: 'none' as const,
+        pendingIdentify: false,
+        pendingSacrifice: false,
+        pendingAllocations: loadedState.pendingAllocations ?? { str: 0, dex: 0, int: 0, vit: 0 },
       });
 
       // Suspend save: delete after loading to prevent save-scumming

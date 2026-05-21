@@ -4,8 +4,7 @@ import { BIOME_CONFIG } from '../constants';
 import {
   DungeonData, Room,
   createTile, createWallTile, fillMap,
-  carveCorridor,
-  placeEnemies, placeItems, placeBoss,
+  carveCorridor, placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs,
 } from './DungeonGenerator';
 
@@ -23,6 +22,83 @@ function floodFill(map: Tile[][], startX: number, startY: number, width: number,
     stack.push({ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 });
   }
   return region;
+}
+
+// Carve a plus/cross shaped room
+function carvePlusRoom(map: Tile[][], cx: number, cy: number, armW: number, armH: number, biome: Biome) {
+  const halfW = Math.floor(armW / 2);
+  const halfH = Math.floor(armH / 2);
+  // Horizontal arm
+  for (let dx = -halfW; dx <= halfW; dx++) {
+    const x = cx + dx;
+    if (x >= 1 && x < map[0].length - 1 && cy >= 1 && cy < map.length - 1) {
+      map[cy][x] = createTile(TileType.Floor, biome);
+    }
+  }
+  // Vertical arm
+  for (let dy = -halfH; dy <= halfH; dy++) {
+    const y = cy + dy;
+    if (y >= 1 && y < map.length - 1 && cx >= 1 && cx < map[0].length - 1) {
+      map[y][cx] = createTile(TileType.Floor, biome);
+    }
+  }
+  // Thicken the cross (2-wide arms)
+  for (let dx = -halfW; dx <= halfW; dx++) {
+    const x = cx + dx;
+    if (x >= 1 && x < map[0].length - 1 && cy - 1 >= 1) {
+      map[cy - 1][x] = createTile(TileType.Floor, biome);
+    }
+    if (x >= 1 && x < map[0].length - 1 && cy + 1 < map.length - 1) {
+      map[cy + 1][x] = createTile(TileType.Floor, biome);
+    }
+  }
+  for (let dy = -halfH; dy <= halfH; dy++) {
+    const y = cy + dy;
+    if (y >= 1 && y < map.length - 1 && cx - 1 >= 1) {
+      map[y][cx - 1] = createTile(TileType.Floor, biome);
+    }
+    if (y >= 1 && y < map.length - 1 && cx + 1 < map[0].length - 1) {
+      map[y][cx + 1] = createTile(TileType.Floor, biome);
+    }
+  }
+}
+
+// Carve an L-shaped room
+function carveLRoom(map: Tile[][], x: number, y: number, w1: number, h1: number, w2: number, h2: number, biome: Biome) {
+  const height = map.length;
+  const width = map[0].length;
+  // Vertical part
+  for (let dy = 0; dy < h1; dy++) {
+    for (let dx = 0; dx < w1; dx++) {
+      const px = x + dx, py = y + dy;
+      if (px >= 1 && px < width - 1 && py >= 1 && py < height - 1) {
+        map[py][px] = createTile(TileType.Floor, biome);
+      }
+    }
+  }
+  // Horizontal part (extending right from bottom of vertical)
+  for (let dy = 0; dy < h2; dy++) {
+    for (let dx = 0; dx < w2; dx++) {
+      const px = x + dx, py = y + h1 - h2 + dy;
+      if (px >= 1 && px < width - 1 && py >= 1 && py < height - 1) {
+        map[py][px] = createTile(TileType.Floor, biome);
+      }
+    }
+  }
+}
+
+// Wide corridor (2-tile wide)
+function carveWideCorridor(map: Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome) {
+  // Carve two parallel corridors offset by 1
+  carveCorridor(map, x1, y1, x2, y2, biome);
+  if (x1 !== x2) {
+    // Horizontal-ish: offset vertically
+    if (y1 + 1 < map.length - 1) carveCorridor(map, x1, y1 + 1, x2, y2 + 1, biome);
+  }
+  if (y1 !== y2) {
+    // Vertical-ish: offset horizontally
+    if (x1 + 1 < map[0].length - 1) carveCorridor(map, x1 + 1, y1, x2 + 1, y2, biome);
+  }
 }
 
 export function generateCrystalCave(floor: number, seed: number): DungeonData {
@@ -91,13 +167,16 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
     }
   }
 
-  // 5. Place crystal clusters (3-5 small open areas)
+  // 5. Place varied room clusters
   const clusters: Room[] = [];
-  for (let i = 0; i < rng.nextInt(3, 6); i++) {
-    const cw = rng.nextInt(3, 6);
-    const ch = rng.nextInt(3, 6);
-    const cx = rng.nextInt(3, width - cw - 3);
-    const cy = rng.nextInt(3, height - ch - 3);
+  const clusterCount = rng.nextInt(4, 7);
+
+  // First cluster is always a large chamber
+  {
+    const cw = rng.nextInt(10, 16);
+    const ch = rng.nextInt(8, 14);
+    const cx = rng.nextInt(4, width - cw - 4);
+    const cy = rng.nextInt(4, height - ch - 4);
     for (let y = cy; y < cy + ch && y < height; y++) {
       for (let x = cx; x < cx + cw && x < width; x++) {
         map[y][x] = createTile(TileType.Floor, biome);
@@ -106,11 +185,65 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
     clusters.push({ x: cx, y: cy, w: cw, h: ch, centerX: cx + Math.floor(cw / 2), centerY: cy + Math.floor(ch / 2) });
   }
 
-  // 6. Connect clusters with corridors
+  for (let i = 1; i < clusterCount; i++) {
+    const shapeType = rng.nextInt(0, 3);
+    if (shapeType === 0) {
+      // Standard rectangle (small)
+      const cw = rng.nextInt(3, 7);
+      const ch = rng.nextInt(3, 7);
+      const cx = rng.nextInt(3, width - cw - 3);
+      const cy = rng.nextInt(3, height - ch - 3);
+      for (let y = cy; y < cy + ch && y < height; y++) {
+        for (let x = cx; x < cx + cw && x < width; x++) {
+          map[y][x] = createTile(TileType.Floor, biome);
+        }
+      }
+      clusters.push({ x: cx, y: cy, w: cw, h: ch, centerX: cx + Math.floor(cw / 2), centerY: cy + Math.floor(ch / 2) });
+    } else if (shapeType === 1) {
+      // Large chamber
+      const cw = rng.nextInt(8, 14);
+      const ch = rng.nextInt(6, 12);
+      const cx = rng.nextInt(4, width - cw - 4);
+      const cy = rng.nextInt(4, height - ch - 4);
+      for (let y = cy; y < cy + ch && y < height; y++) {
+        for (let x = cx; x < cx + cw && x < width; x++) {
+          map[y][x] = createTile(TileType.Floor, biome);
+        }
+      }
+      clusters.push({ x: cx, y: cy, w: cw, h: ch, centerX: cx + Math.floor(cw / 2), centerY: cy + Math.floor(ch / 2) });
+    } else if (shapeType === 2) {
+      // Plus/cross shaped room
+      const cx = rng.nextInt(8, width - 8);
+      const cy = rng.nextInt(8, height - 8);
+      const armW = rng.nextInt(5, 10);
+      const armH = rng.nextInt(4, 8);
+      carvePlusRoom(map, cx, cy, armW, armH, biome);
+      const roomW = armW + 2;
+      const roomH = armH + 2;
+      clusters.push({ x: cx - Math.floor(armW / 2), y: cy - Math.floor(armH / 2), w: roomW, h: roomH, centerX: cx, centerY: cy });
+    } else {
+      // L-shaped room
+      const w1 = rng.nextInt(3, 6);
+      const h1 = rng.nextInt(5, 10);
+      const w2 = rng.nextInt(5, 10);
+      const h2 = rng.nextInt(3, 5);
+      const rx = rng.nextInt(3, width - Math.max(w1, w2) - 3);
+      const ry = rng.nextInt(3, height - h1 - 3);
+      carveLRoom(map, rx, ry, w1, h1, w2, h2, biome);
+      clusters.push({ x: rx, y: ry, w: Math.max(w1, w2), h: h1, centerX: rx + Math.floor(w2 / 2), centerY: ry + Math.floor(h1 / 2) });
+    }
+  }
+
+  // 6. Connect clusters with varied corridors
   for (let i = 1; i < clusters.length; i++) {
     const a = clusters[i - 1];
     const b = clusters[i];
-    carveCorridor(map, a.centerX, a.centerY, b.centerX, b.centerY, biome);
+    // 50% chance of wide corridor, 50% normal
+    if (rng.chance(0.5)) {
+      carveWideCorridor(map, a.centerX, a.centerY, b.centerX, b.centerY, biome);
+    } else {
+      carveCorridor(map, a.centerX, a.centerY, b.centerX, b.centerY, biome);
+    }
   }
 
   // 7. Add shallow water at edges (floor tiles with ≥1 adjacent wall, 30% chance)
@@ -130,8 +263,58 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
     }
   }
 
-  // 8. Use clusters as the primary rooms for entity placement
-  const rooms = [...clusters];
+  // 8. Add 2-3 small side-caves reachable by narrow tunnels
+  const sideCaveCount = rng.nextInt(2, 4);
+  const sideCaves: Room[] = [];
+  for (let i = 0; i < sideCaveCount; i++) {
+    const cw = rng.nextInt(3, 6);
+    const ch = rng.nextInt(3, 6);
+    // Find a wall tile adjacent to an existing floor tile (cave edge)
+    let placed = false;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const cx = rng.nextInt(2, width - cw - 2);
+      const cy = rng.nextInt(2, height - ch - 2);
+      // Check: all tiles in the candidate area are currently walls
+      let allWalls = true;
+      for (let dy = 0; dy < ch && allWalls; dy++) {
+        for (let dx = 0; dx < cw && allWalls; dx++) {
+          if (map[cy + dy][cx + dx].type !== TileType.Wall) allWalls = false;
+        }
+      }
+      if (!allWalls) continue;
+
+      // Find nearest existing floor tile to connect from
+      let bestDist = Infinity;
+      let connectFrom: Position | null = null;
+      const searchRadius = 12;
+      for (let sy = Math.max(0, cy - searchRadius); sy < Math.min(height, cy + ch + searchRadius); sy++) {
+        for (let sx = Math.max(0, cx - searchRadius); sx < Math.min(width, cx + cw + searchRadius); sx++) {
+          if (map[sy][sx].type === TileType.Floor || map[sy][sx].type === TileType.ShallowWater) {
+            const d = Math.abs(sx - cx) + Math.abs(sy - cy);
+            if (d < bestDist && d > 2) { bestDist = d; connectFrom = { x: sx, y: sy }; }
+          }
+        }
+      }
+      if (!connectFrom || bestDist > 15) continue;
+
+      // Carve the side-cave
+      for (let dy = 0; dy < ch; dy++) {
+        for (let dx = 0; dx < cw; dx++) {
+          map[cy + dy][cx + dx] = createTile(TileType.Floor, biome);
+        }
+      }
+      const sideCenter = { x: cx + Math.floor(cw / 2), y: cy + Math.floor(ch / 2) };
+      // Connect with a narrow (1-tile) tunnel
+      carveCorridor(map, connectFrom.x, connectFrom.y, sideCenter.x, sideCenter.y, biome);
+
+      sideCaves.push({ x: cx, y: cy, w: cw, h: ch, centerX: sideCenter.x, centerY: sideCenter.y });
+      placed = true;
+      break;
+    }
+  }
+
+  // 9. Use clusters + side-caves as rooms for entity placement
+  const rooms = [...clusters, ...sideCaves];
 
   // Player start and stairs: randomly pick far-apart clusters
   const { startRoom, stairsRoom } = pickStartAndStairs(clusters, rng, width, height);
@@ -164,7 +347,7 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
   }
 
   const boss = placeBoss(rooms, floor, biome);
-  if (boss) enemies.push(boss);
+  if (boss) { enemies.push(boss); markBossRoom(map, boss.bossRoom, biome); }
 
   return { map, rooms, playerStart, stairsDown, enemies, items, shopPos, eventPos };
 }

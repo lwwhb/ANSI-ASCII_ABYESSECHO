@@ -6,7 +6,7 @@ import {
   createTile, fillMap,
   splitBSP, createRooms, collectRooms,
   carveRoom, addEnvironment,
-  placeEnemies, placeItems, placeBoss,
+  placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs,
 } from './DungeonGenerator';
 
@@ -139,6 +139,23 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
     }
   }
 
+  // Pillars in 3-5 rooms: place stone pillars that block movement and line-of-sight
+  const pillarRoomCount = rng.nextInt(3, 6);
+  const pillarRooms = rooms.slice(1).sort(() => rng.next() - 0.5).slice(0, pillarRoomCount);
+  for (const room of pillarRooms) {
+    if (room.w < 6 || room.h < 6) continue; // Only in larger rooms
+    // Place 2-4 pillars in a grid pattern
+    const pillarCount = rng.nextInt(2, 5);
+    for (let p = 0; p < pillarCount; p++) {
+      const px = rng.nextInt(room.x + 2, room.x + room.w - 3);
+      const py = rng.nextInt(room.y + 2, room.y + room.h - 3);
+      if (map[py][px].type === TileType.Floor || map[py][px].type === TileType.CursedGround) {
+        // Pillar is a wall tile with crypt wall appearance
+        map[py][px] = { ...createTile(TileType.Wall, biome), char: '▓', fg: '#556655' };
+      }
+    }
+  }
+
   // Player start and stairs: randomly pick far-apart rooms
   const { startRoom, stairsRoom } = pickStartAndStairs(rooms, rng, width, height);
   const playerStart = { x: startRoom.centerX, y: startRoom.centerY };
@@ -169,7 +186,7 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
   }
 
   const boss = placeBoss(rooms, floor, biome);
-  if (boss) enemies.push(boss);
+  if (boss) { enemies.push(boss); markBossRoom(map, boss.bossRoom, biome); }
 
   return { map, rooms, playerStart, stairsDown, enemies, items, shopPos, eventPos };
 }

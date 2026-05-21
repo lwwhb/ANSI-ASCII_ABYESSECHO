@@ -87,7 +87,7 @@ const ShopModal: React.FC = () => {
               出售你的物品 (半价):
             </div>
             {player.inventory.map((item, index) => {
-              const sellPrice = Math.floor(item.value / 2);
+              const sellPrice = item.cursed ? Math.max(1, Math.floor(item.value / 4)) : Math.floor(item.value / 2);
               return (
                 <div key={item.id} style={{
                   display: 'flex',
@@ -97,25 +97,26 @@ const ShopModal: React.FC = () => {
                   fontSize: '12px',
                 }}>
                   <span style={{ color: item.fg, width: '20px' }}>{item.char}</span>
-                  <span style={{ color: RARITY_COLORS[item.rarity], flex: 1 }}>{getItemName(item)}</span>
-                  <span style={{ color: '#ccaa44', marginRight: '12px', fontSize: '11px' }}>{sellPrice}💰</span>
-                  {!item.cursed && (
-                    <button
-                      onClick={() => sellItem(index)}
-                      style={{
-                        backgroundColor: '#aa8844',
-                        color: '#0a0a12',
-                        border: 'none',
-                        padding: '3px 8px',
-                        fontSize: '10px',
-                        fontFamily: '"Courier New", monospace',
-                        cursor: 'pointer',
-                        borderRadius: '3px',
-                      }}
-                    >
-                      出售
-                    </button>
-                  )}
+                  <span style={{ color: RARITY_COLORS[item.rarity], flex: 1 }}>
+                    {getItemName(item)}
+                    {item.cursed && <span style={{ color: '#ff4444', marginLeft: '4px', fontSize: '10px' }}>[低价收购]</span>}
+                  </span>
+                  <span style={{ color: item.cursed ? '#886644' : '#ccaa44', marginRight: '12px', fontSize: '11px' }}>{sellPrice}💰</span>
+                  <button
+                    onClick={() => sellItem(index)}
+                    style={{
+                      backgroundColor: item.cursed ? '#664422' : '#aa8844',
+                      color: item.cursed ? '#ccaa88' : '#0a0a12',
+                      border: 'none',
+                      padding: '3px 8px',
+                      fontSize: '10px',
+                      fontFamily: '"Courier New", monospace',
+                      cursor: 'pointer',
+                      borderRadius: '3px',
+                    }}
+                  >
+                    出售
+                  </button>
                 </div>
               );
             })}

@@ -132,7 +132,10 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
     return armor;
   } else if (roll < 0.50) {
     const bonusStat = rng.pick(['str', 'dex', 'int', 'vit'] as const);
-    const bonusValue = rng.nextInt(1, 2 + Math.floor(floor / 10));
+    const rarity = rollRarity(rng, floor, luckBonus);
+    const rarityMult = { common: 1, good: 1.2, rare: 1.4, epic: 1.7, legendary: 2.2 }[rarity];
+    const baseBonusValue = rng.nextInt(1, 2 + Math.floor(floor / 10));
+    const bonusValue = Math.max(1, Math.round(baseBonusValue * rarityMult));
     const cursed = allowCursed && rng.chance(0.03);
     return {
       id: genId(),
@@ -140,7 +143,7 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
       type: ItemType.Ring,
       char: '=',
       fg: '#ccccaa',
-      rarity: rollRarity(rng, floor, luckBonus),
+      rarity,
       identified: true,
       description: cursed ? `${bonusStat}+0 (诅咒)` : `${bonusStat}+${bonusValue}`,
       value: cursed ? 10 : bonusValue * 50,
@@ -149,7 +152,10 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
     } as RingItem;
   } else if (roll < 0.55) {
     const bonusStat = rng.pick(['str', 'dex', 'int', 'vit'] as const);
-    const bonusValue = rng.nextInt(2, 3 + Math.floor(floor / 8));
+    const rarity = rollRarity(rng, floor, luckBonus);
+    const rarityMult = { common: 1, good: 1.2, rare: 1.4, epic: 1.7, legendary: 2.2 }[rarity];
+    const baseBonusValue = rng.nextInt(2, 3 + Math.floor(floor / 8));
+    const bonusValue = Math.max(1, Math.round(baseBonusValue * rarityMult));
     const cursed = allowCursed && rng.chance(0.03);
     return {
       id: genId(),
@@ -157,7 +163,7 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
       type: ItemType.Amulet,
       char: '"',
       fg: '#ccaa44',
-      rarity: rollRarity(rng, floor, luckBonus),
+      rarity,
       identified: true,
       description: cursed ? `${bonusStat}+0 (诅咒)` : `${bonusStat}+${bonusValue}`,
       value: cursed ? 20 : bonusValue * 80,

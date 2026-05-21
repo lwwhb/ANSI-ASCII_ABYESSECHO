@@ -4,7 +4,7 @@ import { BIOME_CONFIG } from '../constants';
 import {
   DungeonData, Room,
   createTile, fillMap,
-  placeEnemies, placeItems, placeBoss,
+  placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs,
 } from './DungeonGenerator';
 
@@ -176,7 +176,7 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
   }
 
   const boss = placeBoss(rooms, floor, biome);
-  if (boss) enemies.push(boss);
+  if (boss) { enemies.push(boss); markBossRoom(map, boss.bossRoom, biome); }
 
   return { map, rooms, playerStart, stairsDown, enemies, items, shopPos, eventPos };
 }

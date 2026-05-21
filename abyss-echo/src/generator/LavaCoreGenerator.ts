@@ -4,7 +4,7 @@ import { BIOME_CONFIG } from '../constants';
 import {
   DungeonData, Room,
   createTile,
-  placeEnemies, placeItems, placeBoss,
+  placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs,
 } from './DungeonGenerator';
 
@@ -71,6 +71,36 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
     for (let y = iy; y < iy + ih && y < height; y++) {
       for (let x = ix; x < ix + iw && x < width; x++) {
         map[y][x] = createTile(TileType.Floor, biome);
+      }
+    }
+    // Irregularize island edges: randomly bite off corners and edges
+    for (let y = iy; y < iy + ih && y < height; y++) {
+      for (let x = ix; x < ix + iw && x < width; x++) {
+        const isEdge = y === iy || y === iy + ih - 1 || x === ix || x === ix + iw - 1;
+        const isCorner = (y === iy || y === iy + ih - 1) && (x === ix || x === ix + iw - 1);
+        if (isCorner && rng.chance(0.6)) {
+          map[y][x] = createTile(TileType.Lava, biome); // Bite off corners
+        } else if (isEdge && !isCorner && rng.chance(0.25)) {
+          map[y][x] = createTile(TileType.Lava, biome); // Random edge bite
+        }
+      }
+    }
+    // Random protrusions: add 1-3 floor tiles just outside the island edges
+    const protrusionCount = rng.nextInt(1, 4);
+    for (let p = 0; p < protrusionCount; p++) {
+      const side = rng.nextInt(0, 4);
+      if (side === 0) { // top
+        const px = rng.nextInt(ix, ix + iw - 1);
+        if (iy - 1 >= 0 && iy - 1 < height && px < width) map[iy - 1][px] = createTile(TileType.Floor, biome);
+      } else if (side === 1) { // bottom
+        const px = rng.nextInt(ix, ix + iw - 1);
+        if (iy + ih < height && px < width) map[iy + ih][px] = createTile(TileType.Floor, biome);
+      } else if (side === 2) { // left
+        const py = rng.nextInt(iy, iy + ih - 1);
+        if (ix - 1 >= 0 && py < height) map[py][ix - 1] = createTile(TileType.Floor, biome);
+      } else { // right
+        const py = rng.nextInt(iy, iy + ih - 1);
+        if (ix + iw < width && py < height) map[py][ix + iw] = createTile(TileType.Floor, biome);
       }
     }
     islands.push({ x: ix, y: iy, w: iw, h: ih, centerX: ix + Math.floor(iw / 2), centerY: iy + Math.floor(ih / 2) });
@@ -166,7 +196,7 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
   }
 
   const boss = placeBoss(islands, floor, biome);
-  if (boss) enemies.push(boss);
+  if (boss) { enemies.push(boss); markBossRoom(map, boss.bossRoom, biome); }
 
   return { map, rooms: islands, playerStart, stairsDown, enemies, items, shopPos, eventPos };
 }

@@ -74,7 +74,7 @@ export const EXP_GROWTH = 1.5;
 // Tile Definitions
 // ============================================================
 export const TILE_CHARS: Record<TileType, { char: string; fg: string; bg: string; walkable: boolean; transparent: boolean }> = {
-  [TileType.Wall]:         { char: '█', fg: '#555566', bg: '#222233', walkable: false, transparent: false },
+  [TileType.Wall]:         { char: '█', fg: '#555566', bg: '#555566', walkable: false, transparent: false },
   [TileType.Floor]:        { char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
   [TileType.Corridor]:     { char: '·', fg: '#555566', bg: '#0f0f1f', walkable: true,  transparent: true },
   [TileType.Door]:         { char: '▓', fg: '#aa8844', bg: '#111122', walkable: false, transparent: false },
@@ -101,17 +101,17 @@ export const TILE_CHARS: Record<TileType, { char: string; fg: string; bg: string
 // Biome-specific tile overrides
 export const BIOME_TILES: Record<Biome, Partial<Record<TileType, { char?: string; fg?: string; bg?: string }>>> = {
   [Biome.StoneDungeon]: {
-    [TileType.Wall]:  { fg: '#555566', bg: '#222233' },
+    [TileType.Wall]:  { fg: '#555566', bg: '#555566' },
     [TileType.Floor]: { fg: '#666677', bg: '#111122' },
   },
   [Biome.CrystalCavern]: {
-    [TileType.Wall]:         { char: '▓', fg: '#7766bb', bg: '#221144' },
+    [TileType.Wall]:         { char: '▓', fg: '#7766bb', bg: '#7766bb' },
     [TileType.Floor]:        { char: '·', fg: '#9988cc', bg: '#1a0a2e' },
     [TileType.Water]:        { char: '≈', fg: '#88aaff', bg: '#1a1a4e' },
     [TileType.ShallowWater]: { char: '≈', fg: '#88aaff', bg: '#1a1a4e' },
   },
   [Biome.AncientCrypt]: {
-    [TileType.Wall]:         { char: '█', fg: '#667766', bg: '#1a221a' },
+    [TileType.Wall]:         { char: '█', fg: '#667766', bg: '#667766' },
     [TileType.Floor]:        { char: '·', fg: '#778877', bg: '#0f1a0f' },
     [TileType.Door]:         { char: '▓', fg: '#889966', bg: '#1a221a' },
     [TileType.CursedGround]: { char: '·', fg: '#8877aa', bg: '#151020' },
@@ -119,15 +119,15 @@ export const BIOME_TILES: Record<Biome, Partial<Record<TileType, { char?: string
     [TileType.Sarcophagus]:  { char: '■', fg: '#999988', bg: '#1a221a' },
   },
   [Biome.LavaCore]: {
-    [TileType.Wall]:       { char: '▓', fg: '#994422', bg: '#331100' },
+    [TileType.Wall]:       { char: '▓', fg: '#994422', bg: '#994422' },
     [TileType.Floor]:      { char: '·', fg: '#886644', bg: '#1a0f0a' },
     [TileType.Lava]:       { char: '≈', fg: '#ff6622', bg: '#551100' },
     [TileType.CooledLava]: { char: '≈', fg: '#aa5533', bg: '#221100' },
   },
   [Biome.VoidAbyss]: {
-    [TileType.Wall]:  { char: '█', fg: '#6644aa', bg: '#110022' },
+    [TileType.Wall]:  { char: '█', fg: '#6644aa', bg: '#6644aa' },
     [TileType.Floor]: { char: '·', fg: '#8866cc', bg: '#0a0a1e' },
-    [TileType.VoidWall]: { char: '█', fg: '#5533aa', bg: '#0a0015' },
+    [TileType.VoidWall]: { char: '█', fg: '#5533aa', bg: '#5533aa' },
     [TileType.Portal]:   { char: '⊙', fg: '#dd55ff', bg: '#0a0a1e' },
   },
 };

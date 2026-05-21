@@ -22,7 +22,10 @@ const STAT_KEY_MAP: Record<string, keyof Stats> = {
 const LevelUpModal: React.FC = () => {
   const player = useGameStore(s => s.player);
   const allocateStat = useGameStore(s => s.allocateStat);
+  const deallocateStat = useGameStore(s => s.deallocateStat);
+  const resetAllocations = useGameStore(s => s.resetAllocations);
   const confirmLevelUp = useGameStore(s => s.confirmLevelUp);
+  const pendingAllocations = useGameStore(s => s.pendingAllocations);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!player) return;
@@ -40,6 +43,8 @@ const LevelUpModal: React.FC = () => {
   }, [handleKeyDown]);
 
   if (!player) return null;
+
+  const hasPending = Object.values(pendingAllocations).some(v => (v || 0) > 0);
 
   return (
     <div style={{
@@ -59,7 +64,7 @@ const LevelUpModal: React.FC = () => {
         border: '2px solid #ffcc44',
         borderRadius: '8px',
         padding: '24px',
-        width: '400px',
+        width: '420px',
         fontFamily: '"Courier New", monospace',
         boxShadow: '0 0 30px rgba(255,204,68,0.2)',
       }}>
@@ -85,61 +90,105 @@ const LevelUpModal: React.FC = () => {
           <span style={{ color: '#ffcc44' }}>可分配属性点: {player.statPoints}</span>
         </div>
 
-        {STAT_KEYS.map((stat, idx) => (
-          <div key={stat} style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '8px 0',
-            borderBottom: '1px solid #111122',
-          }}>
-            <span style={{ color: '#444455', width: '20px', fontSize: '11px' }}>[{idx + 1}]</span>
-            <span style={{ color: STAT_COLORS[stat], fontSize: '14px', width: '130px' }}>
-              {STAT_NAMES[stat]}
-            </span>
-            <span style={{ color: '#cccccc', fontSize: '16px', fontWeight: 'bold', width: '40px', textAlign: 'center' }}>
-              {player.stats[stat]}
-            </span>
+        {STAT_KEYS.map((stat, idx) => {
+          const pending = pendingAllocations[stat] || 0;
+          return (
+            <div key={stat} style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 0',
+              borderBottom: '1px solid #111122',
+            }}>
+              <span style={{ color: '#444455', width: '20px', fontSize: '11px' }}>[{idx + 1}]</span>
+              <span style={{ color: STAT_COLORS[stat], fontSize: '14px', width: '120px' }}>
+                {STAT_NAMES[stat]}
+              </span>
+              <span style={{ color: '#cccccc', fontSize: '16px', fontWeight: 'bold', width: '40px', textAlign: 'center' }}>
+                {player.stats[stat]}{pending > 0 && <span style={{ color: '#44cc44', fontSize: '12px' }}> (+{pending})</span>}
+              </span>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {pending > 0 && (
+                  <button
+                    onClick={() => deallocateStat(stat)}
+                    style={{
+                      backgroundColor: '#442222',
+                      color: '#ff4444',
+                      border: '1px solid #662222',
+                      width: '30px',
+                      height: '30px',
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      fontFamily: '"Courier New", monospace',
+                    }}
+                  >
+                    -
+                  </button>
+                )}
+                <button
+                  onClick={() => allocateStat(stat)}
+                  disabled={player.statPoints <= 0}
+                  style={{
+                    backgroundColor: player.statPoints > 0 ? STAT_COLORS[stat] : '#222244',
+                    color: player.statPoints > 0 ? '#0a0a12' : '#444455',
+                    border: 'none',
+                    width: '30px',
+                    height: '30px',
+                    fontSize: '16px',
+                    fontWeight: 'bold',
+                    cursor: player.statPoints > 0 ? 'pointer' : 'not-allowed',
+                    borderRadius: '4px',
+                    fontFamily: '"Courier New", monospace',
+                  }}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+          {hasPending && (
             <button
-              onClick={() => allocateStat(stat)}
-              disabled={player.statPoints <= 0}
+              onClick={resetAllocations}
               style={{
-                backgroundColor: player.statPoints > 0 ? STAT_COLORS[stat] : '#222244',
-                color: player.statPoints > 0 ? '#0a0a12' : '#444455',
-                border: 'none',
-                width: '30px',
-                height: '30px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: player.statPoints > 0 ? 'pointer' : 'not-allowed',
-                borderRadius: '4px',
+                flex: 1,
+                backgroundColor: '#332222',
+                color: '#ff6644',
+                border: '1px solid #553333',
+                padding: '10px',
+                fontSize: '13px',
                 fontFamily: '"Courier New", monospace',
+                fontWeight: 'bold',
+                borderRadius: '6px',
+                cursor: 'pointer',
               }}
             >
-              +
+              ↩ 重置
             </button>
-          </div>
-        ))}
-
-        <button
-          onClick={confirmLevelUp}
-          disabled={player.statPoints > 0}
-          style={{
-            width: '100%',
-            marginTop: '16px',
-            backgroundColor: player.statPoints === 0 ? '#ffcc44' : '#222244',
-            color: player.statPoints === 0 ? '#0a0a12' : '#444455',
-            border: 'none',
-            padding: '10px',
-            fontSize: '14px',
-            fontFamily: '"Courier New", monospace',
-            fontWeight: 'bold',
-            borderRadius: '6px',
-            cursor: player.statPoints === 0 ? 'pointer' : 'not-allowed',
-          }}
-        >
-          {player.statPoints > 0 ? `还需分配 ${player.statPoints} 点` : '确认'}
-        </button>
+          )}
+          <button
+            onClick={confirmLevelUp}
+            disabled={player.statPoints > 0}
+            style={{
+              flex: 1,
+              backgroundColor: player.statPoints === 0 ? '#ffcc44' : '#222244',
+              color: player.statPoints === 0 ? '#0a0a12' : '#444455',
+              border: 'none',
+              padding: '10px',
+              fontSize: '14px',
+              fontFamily: '"Courier New", monospace',
+              fontWeight: 'bold',
+              borderRadius: '6px',
+              cursor: player.statPoints === 0 ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {player.statPoints > 0 ? `还需分配 ${player.statPoints} 点` : '确认'}
+          </button>
+        </div>
       </div>
     </div>
   );

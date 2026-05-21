@@ -341,7 +341,11 @@ export function generateDungeon(floor: number, seed: number): DungeonData {
 // Pick two rooms that are far enough apart for player start and stairs-down
 export function pickStartAndStairs(rooms: Room[], rng: SeededRandom, mapWidth: number, mapHeight: number): { startRoom: Room; stairsRoom: Room } {
   if (rooms.length <= 1) {
-    return { startRoom: rooms[0], stairsRoom: rooms[0] };
+    // Single room: place start at center, stairs at opposite corner of the room
+    const room = rooms[0];
+    const startRoom = { ...room, centerX: room.x + 2, centerY: room.y + 2 };
+    const stairsRoom = { ...room, centerX: room.x + room.w - 3, centerY: room.y + room.h - 3 };
+    return { startRoom, stairsRoom };
   }
 
   const diagonal = Math.sqrt(mapWidth * mapWidth + mapHeight * mapHeight);
@@ -377,7 +381,7 @@ export function pickStartAndStairs(rooms: Room[], rng: SeededRandom, mapWidth: n
 }
 
 // Helper function to place boss (used by all generators)
-export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId: string; pos: Position; isBoss: boolean } | null {
+export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId: string; pos: Position; isBoss: boolean; bossRoom: Room } | null {
   if (floor % 5 !== 0) return null;
 
   const bossIndex = Math.floor(floor / 5) - 1;
@@ -389,5 +393,29 @@ export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId:
     defId: bossDef.id,
     pos: { x: bossRoom.centerX, y: bossRoom.centerY },
     isBoss: true,
+    bossRoom,
   };
+}
+
+// Mark boss room floor tiles with a distinctive background color
+export function markBossRoom(map: Tile[][], bossRoom: Room, biome: Biome): void {
+  const height = map.length;
+  const width = map[0]?.length || 0;
+  // Each biome gets a themed boss room floor color
+  const bossFloorBg: Record<string, string> = {
+    stoneDungeon: '#1a0808',    // dark crimson
+    crystalCavern: '#0a0a1a',  // deep indigo
+    ancientCrypt: '#140a14',   // dark purple
+    lavaCore: '#1a0a04',       // dark ember
+    voidAbyss: '#100818',       // void purple
+  };
+  const bg = bossFloorBg[biome] || '#1a0808';
+
+  for (let y = bossRoom.y; y < bossRoom.y + bossRoom.h; y++) {
+    for (let x = bossRoom.x; x < bossRoom.x + bossRoom.w; x++) {
+      if (x >= 0 && x < width && y >= 0 && y < height && map[y][x].walkable) {
+        map[y][x] = { ...map[y][x], bg };
+      }
+    }
+  }
 }

@@ -8,6 +8,8 @@ import { SeededRandom } from '../utils/random';
 
 export interface CombatResult {
   damage: number;
+  physicalDamage: number;
+  elementalDamage: number;
   critical: boolean;
   element: Element;
   killed: boolean;
@@ -30,6 +32,10 @@ export function calculateMeleeDamage(
   // Multiplicative defense: higher defense always reduces damage meaningfully
   let damage = Math.max(1, Math.floor(preDefDamage * 20 / (20 + defender.defense)));
 
+  // Compute physical portion (damage without elemental modifier)
+  const physicalDamage = Math.max(1, Math.floor(Math.max(1, rawDamage) * 20 / (20 + defender.defense)));
+  const elementalDamage = Math.max(0, damage - physicalDamage);
+
   // Critical hit: 5% + DEX/200
   const critChance = 0.05 + attackerStats.dex / 200;
   const critical = rng.chance(critChance);
@@ -39,6 +45,8 @@ export function calculateMeleeDamage(
 
   return {
     damage,
+    physicalDamage: critical ? Math.floor(physicalDamage * 1.5) : physicalDamage,
+    elementalDamage: critical ? Math.floor(elementalDamage * 1.5) : elementalDamage,
     critical,
     element,
     killed: false,
@@ -60,6 +68,8 @@ export function calculateMagicDamage(
 
   return {
     damage,
+    physicalDamage: 0,
+    elementalDamage: damage,
     critical: false,
     element,
     killed: false,

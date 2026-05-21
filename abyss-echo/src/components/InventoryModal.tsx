@@ -95,6 +95,11 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ selectedIndex, onSelect
   const equipItem = useGameStore(s => s.equipItem);
   const dropItem = useGameStore(s => s.dropItem);
   const toggleInventory = useGameStore(s => s.toggleInventory);
+  const pendingIdentify = useGameStore(s => s.pendingIdentify);
+  const pendingSacrifice = useGameStore(s => s.pendingSacrifice);
+  const confirmIdentify = useGameStore(s => s.confirmIdentify);
+  const confirmSacrifice = useGameStore(s => s.confirmSacrifice);
+  const [ringSlotChoice, setRingSlotChoice] = React.useState<EquipmentSlot | null>(null);
 
   if (!player) return null;
 
@@ -120,8 +125,9 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ selectedIndex, onSelect
         borderRadius: '8px',
         padding: '20px',
         width: '640px',
-        maxHeight: '80vh',
-        overflowY: 'auto',
+        height: '75vh',
+        display: 'flex',
+        flexDirection: 'column',
         fontFamily: '"Courier New", monospace',
       }}
         onClick={(e) => e.stopPropagation()}
@@ -132,51 +138,68 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ selectedIndex, onSelect
           marginBottom: '16px',
           borderBottom: '1px solid #222244',
           paddingBottom: '8px',
+          flexShrink: 0,
         }}>
-          <span style={{ color: '#ffcc44', fontSize: '18px' }}>背包 ({inventory.length}/{maxInv})</span>
+          <span style={{ color: '#ffcc44', fontSize: '18px' }}>
+            {pendingIdentify ? '🔍 选择要鉴定的物品' : pendingSacrifice ? '🔥 选择要献祭的消耗品' : `背包 (${inventory.length}/${maxInv})`}
+          </span>
           <span style={{ color: '#666677', fontSize: '14px', cursor: 'pointer' }} onClick={toggleInventory}>
             [I/ESC] 关闭
           </span>
         </div>
 
         {/* Gold display */}
-        <div style={{ color: '#ffcc44', fontSize: '12px', marginBottom: '12px' }}>
+        <div style={{ color: '#ffcc44', fontSize: '12px', marginBottom: '12px', flexShrink: 0 }}>
           💰 {player.gold} 金币
         </div>
 
-        {inventory.length === 0 ? (
-          <div style={{ color: '#444455', textAlign: 'center', padding: '20px' }}>
-            背包空空如也...
-          </div>
-        ) : (
-          <div>
-            {selectedIndex < 0 && (
-              <div style={{
-                color: '#556677',
-                fontSize: '12px',
-                textAlign: 'center',
-                padding: '4px 0 8px',
-                borderBottom: '1px solid #151528',
-              }}>
-                ↑↓ 或 点击选择物品查看详情
-              </div>
-            )}
-            {inventory.map((item, index) => (
-              <InventoryItemRow
-                key={item.id}
-                item={item}
-                index={index}
-                selected={index === selectedIndex}
-                onSelect={() => onSelect(index)}
-                onUse={() => { applyItem(index); onSelect(-1); }}
-                onEquip={() => { equipItem(index); onSelect(-1); }}
-                onDrop={() => { dropItem(index); onSelect(-1); }}
-              />
-            ))}
-          </div>
-        )}
+        {/* Scrollable item list */}
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+          {inventory.length === 0 ? (
+            <div style={{ color: '#444455', textAlign: 'center', padding: '20px' }}>
+              背包空空如也...
+            </div>
+          ) : (
+            <div>
+              {selectedIndex < 0 && !pendingIdentify && !pendingSacrifice && (
+                <div style={{
+                  color: '#556677',
+                  fontSize: '12px',
+                  textAlign: 'center',
+                  padding: '4px 0 8px',
+                  borderBottom: '1px solid #151528',
+                }}>
+                  ↑↓ 或 点击选择物品查看详情
+                </div>
+              )}
+              {inventory.map((item, index) => (
+                <InventoryItemRow
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  selected={index === selectedIndex}
+                  onSelect={() => onSelect(index)}
+                  onUse={() => { applyItem(index); onSelect(-1); }}
+                  onEquip={() => {
+                    if (item.type === ItemType.Ring && player.equipment[EquipmentSlot.Ring1] && player.equipment[EquipmentSlot.Ring2]) {
+                      setRingSlotChoice(EquipmentSlot.Ring1);
+                    } else {
+                      equipItem(index);
+                      onSelect(-1);
+                    }
+                  }}
+                  onDrop={() => { dropItem(index); onSelect(-1); }}
+                  pendingIdentify={pendingIdentify}
+                  pendingSacrifice={pendingSacrifice}
+                  onIdentify={() => { confirmIdentify(index); onSelect(-1); }}
+                  onSacrifice={() => { confirmSacrifice(index); onSelect(-1); }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
-        {/* Selected item detail panel */}
+        {/* Fixed detail panel at bottom */}
         {selectedItem && (
           <div style={{
             marginTop: '10px',
@@ -186,6 +209,7 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ selectedIndex, onSelect
             borderRadius: '4px',
             fontSize: '12px',
             lineHeight: '1.6',
+            flexShrink: 0,
           }}>
             <div style={{ color: RARITY_COLORS[selectedItem.rarity], fontWeight: 'bold', marginBottom: '4px' }}>
               {selectedItem.char} {getItemName(selectedItem)}
@@ -194,6 +218,38 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ selectedIndex, onSelect
             <div style={{ color: '#aaaacc' }}>{getItemStats(selectedItem)}</div>
             {getEquipComparison(selectedItem, player.equipment) && (
               <div style={{ color: '#8888aa', marginTop: '4px' }}>{getEquipComparison(selectedItem, player.equipment)}</div>
+            )}
+            {/* Ring slot selection when both occupied */}
+            {ringSlotChoice !== null && selectedItem.type === ItemType.Ring && player.equipment[EquipmentSlot.Ring1] && player.equipment[EquipmentSlot.Ring2] && (
+              <div style={{ marginTop: '8px', padding: '6px 8px', backgroundColor: '#0d0d22', borderRadius: '4px' }}>
+                <div style={{ color: '#ffcc44', fontSize: '11px', marginBottom: '6px' }}>选择替换哪个戒指槽：</div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => { equipItem(selectedIndex, EquipmentSlot.Ring1); setRingSlotChoice(null); onSelect(-1); }}
+                    style={{
+                      flex: 1, padding: '4px 8px', fontSize: '11px', fontFamily: '"Courier New", monospace',
+                      backgroundColor: '#1a1a3e', color: '#aaaacc', border: '1px solid #333355',
+                      cursor: 'pointer', borderRadius: '3px',
+                    }}>
+                    戒指1: {getItemName(player.equipment[EquipmentSlot.Ring1]!)}
+                  </button>
+                  <button onClick={() => { equipItem(selectedIndex, EquipmentSlot.Ring2); setRingSlotChoice(null); onSelect(-1); }}
+                    style={{
+                      flex: 1, padding: '4px 8px', fontSize: '11px', fontFamily: '"Courier New", monospace',
+                      backgroundColor: '#1a1a3e', color: '#aaaacc', border: '1px solid #333355',
+                      cursor: 'pointer', borderRadius: '3px',
+                    }}>
+                    戒指2: {getItemName(player.equipment[EquipmentSlot.Ring2]!)}
+                  </button>
+                  <button onClick={() => setRingSlotChoice(null)}
+                    style={{
+                      padding: '4px 8px', fontSize: '11px', fontFamily: '"Courier New", monospace',
+                      backgroundColor: 'transparent', color: '#666677', border: '1px solid #333355',
+                      cursor: 'pointer', borderRadius: '3px',
+                    }}>
+                    取消
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -206,8 +262,13 @@ const InventoryModal: React.FC<InventoryModalProps> = ({ selectedIndex, onSelect
           color: '#556677',
           textAlign: 'center',
           lineHeight: '1.6',
+          flexShrink: 0,
         }}>
-          ↑↓ 选择 │ U 使用(药水/卷轴/食物) │ E 装备(武器/防具/饰品) │ D 丢弃 │ I/ESC 关闭
+          {pendingIdentify
+            ? '点击未鉴定物品进行鉴定 │ ESC 取消'
+            : pendingSacrifice
+              ? '点击消耗品进行献祭 │ ESC 取消'
+              : '↑↓ 选择 │ U 使用(药水/卷轴/食物) │ E 装备(武器/防具/饰品) │ D 丢弃 │ I/ESC 关闭'}
         </div>
       </div>
     </div>
@@ -222,13 +283,75 @@ const InventoryItemRow: React.FC<{
   onUse: () => void;
   onEquip: () => void;
   onDrop: () => void;
-}> = ({ item, index, selected, onSelect, onUse, onEquip, onDrop }) => {
+  pendingIdentify: boolean;
+  pendingSacrifice: boolean;
+  onIdentify: () => void;
+  onSacrifice: () => void;
+}> = ({ item, index, selected, onSelect, onUse, onEquip, onDrop, pendingIdentify, pendingSacrifice, onIdentify, onSacrifice }) => {
   const name = getItemName(item);
   const color = RARITY_COLORS[item.rarity];
 
   const canUse = item.type === ItemType.Potion || item.type === ItemType.Scroll || item.type === ItemType.Food;
   const canEquip = item.type === ItemType.Weapon || item.type === ItemType.Armor ||
                    item.type === ItemType.Ring || item.type === ItemType.Amulet;
+
+  // In identify mode, highlight unidentified items
+  if (pendingIdentify) {
+    const canIdentify = !item.identified;
+    return (
+      <div
+        onClick={canIdentify ? onIdentify : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          padding: '6px 8px',
+          borderBottom: '1px solid #111122',
+          fontSize: '13px',
+          backgroundColor: canIdentify
+            ? (selected ? '#1a2a1e' : '#0d1a10')
+            : 'transparent',
+          cursor: canIdentify ? 'pointer' : 'default',
+          opacity: canIdentify ? 1 : 0.4,
+        }}
+      >
+        <span style={{ color: '#444455', width: '20px' }}>{index + 1}.</span>
+        <span style={{ color: item.fg, width: '20px' }}>{item.char}</span>
+        <span style={{ color, flex: 1 }}>
+          {name}
+          {canIdentify && <span style={{ color: '#44cc44', marginLeft: '6px', fontSize: '11px' }}>[未鉴定]</span>}
+        </span>
+      </div>
+    );
+  }
+
+  // In sacrifice mode, highlight consumable items
+  if (pendingSacrifice) {
+    const canSacrifice = item.type === ItemType.Potion || item.type === ItemType.Food;
+    return (
+      <div
+        onClick={canSacrifice ? onSacrifice : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          padding: '6px 8px',
+          borderBottom: '1px solid #111122',
+          fontSize: '13px',
+          backgroundColor: canSacrifice
+            ? (selected ? '#2a1a1e' : '#1a0d10')
+            : 'transparent',
+          cursor: canSacrifice ? 'pointer' : 'default',
+          opacity: canSacrifice ? 1 : 0.4,
+        }}
+      >
+        <span style={{ color: '#444455', width: '20px' }}>{index + 1}.</span>
+        <span style={{ color: item.fg, width: '20px' }}>{item.char}</span>
+        <span style={{ color, flex: 1 }}>
+          {name}
+          {canSacrifice && <span style={{ color: '#ff8844', marginLeft: '6px', fontSize: '11px' }}>[可献祭]</span>}
+        </span>
+      </div>
+    );
+  }
 
   // Action hints: always visible, dimmed when not selected, bright + clickable when selected
   const actionHints: { label: string; onClick?: () => void; color: string }[] = [];
@@ -238,6 +361,7 @@ const InventoryItemRow: React.FC<{
 
   return (
     <div
+      ref={selected ? (el: HTMLDivElement | null) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
       onClick={onSelect}
       style={{
         display: 'flex',

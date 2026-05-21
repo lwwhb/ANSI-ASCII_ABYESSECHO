@@ -125,9 +125,9 @@ export function canEquipItem(player: Player, item: Item): EquipmentSlot | null {
   }
 }
 
-export function equipItem(player: Player, item: Item): Player {
+export function equipItem(player: Player, item: Item, targetSlot?: EquipmentSlot): Player {
   const newPlayer = { ...player };
-  const slot = canEquipItem(player, item);
+  const slot = targetSlot ?? canEquipItem(player, item);
   if (!slot) return player;
 
   // BUG FIX: Can't equip cursed items in a different slot if already cursed-equipped
