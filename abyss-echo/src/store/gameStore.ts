@@ -234,6 +234,7 @@ function checkAchievements(state: GameState, player: Player): string[] {
   check('floor15', state.currentFloor >= 15);
   check('floor20', state.currentFloor >= 20);
   check('floor25', state.currentFloor >= 25);
+  check('floor30', state.currentFloor >= 30);
   check('bossSlayer', player.bossKillCount >= 1);
   check('bossMaster', player.bossKillCount >= 3);
   check('rich', player.gold >= 100);
@@ -1782,6 +1783,19 @@ export const useGameStore = create<GameStore>((set, get) => {
               newMap[bossPos.y][bossPos.x] = { type: TileType.Monument, char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true, visible: false, remembered: false };
               set({ map: newMap });
             }
+
+            // Special victory message for AbyssHeart (floor 30)
+            if (enemy.defId === 'abyssHeart') {
+              addMessages([
+                msg('═', MessageCategory.Story, '#ffffff'),
+                msg('深渊之心停止了跳动...', MessageCategory.Story, '#ffffff'),
+                msg('你理解了深渊的本质。', MessageCategory.Story, '#ffffff'),
+                msg('但深渊也理解了你。', MessageCategory.Story, '#ffffff'),
+                msg('你成为了新的回响。', MessageCategory.Story, '#ffffff'),
+                msg('═', MessageCategory.Story, '#ffffff'),
+              ]);
+            }
+
             // Trigger boss blessing selection
             set({ bossBlessingPending: true, lastBossDefId: enemy.defId });
           }

@@ -512,6 +512,7 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
   { id: 'floor15', name: 'Crypt Walker', nameZh: '陵墓行者', description: '到达第15层', icon: '⚰' },
   { id: 'floor20', name: 'Lava Survivor', nameZh: '熔岩幸存者', description: '到达第20层', icon: '🌋' },
   { id: 'floor25', name: 'Void Touched', nameZh: '虚空触碰者', description: '到达第25层', icon: '🌀' },
+  { id: 'floor30', name: 'Abyss Conqueror', nameZh: '深渊征服者', description: '到达第30层', icon: '💠' },
   { id: 'bossSlayer', name: 'Boss Slayer', nameZh: 'Boss杀手', description: '击败一个Boss', icon: '👑' },
   { id: 'bossMaster', name: 'Boss Master', nameZh: 'Boss征服者', description: '击败3个Boss', icon: '🏆' },
   { id: 'rich', name: 'Gold Hoarder', nameZh: '守财奴', description: '累计拥有100金币', icon: '💰' },
