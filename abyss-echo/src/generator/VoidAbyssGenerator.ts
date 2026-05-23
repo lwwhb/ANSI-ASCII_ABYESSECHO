@@ -188,8 +188,8 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
   const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
 
   // Themed rooms (excluding start, boss, shop, event, elite rooms)
-  const reservedRooms: Room[] = [startRoom];
-  if (stairsRoom) reservedRooms.push(stairsRoom);
+  const reservedRooms: Room[] = [startFrag];
+  if (stairsFrag) reservedRooms.push(stairsFrag);
   if (boss?.bossRoom) reservedRooms.push(boss.bossRoom);
   if (eliteRoom) reservedRooms.push(eliteRoom);
   if (shopPos) {

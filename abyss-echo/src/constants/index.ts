@@ -111,6 +111,10 @@ export const TILE_CHARS: Record<TileType, { char: string; fg: string; bg: string
   [TileType.Inscription]:  { char: '▐', fg: '#ddddaa', bg: 'transparent', walkable: true,  transparent: true },
   [TileType.SecretWall]:   { char: '#', fg: '#444444', bg: '#222222', walkable: true,  transparent: true },
   [TileType.Monument]:     { char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true,  transparent: true },
+  [TileType.SpikeTrap]:    { char: '▲', fg: '#8888ff', bg: '#222244', walkable: true,  transparent: true },
+  [TileType.WeaponRack]:   { char: '⋔', fg: '#aaaaaa', bg: '#443322', walkable: false, transparent: false },
+  [TileType.Forge]:        { char: '⚒', fg: '#ff8800', bg: '#442200', walkable: false, transparent: false },
+  [TileType.SteamVent]:    { char: '≋', fg: '#cccccc', bg: '#445566', walkable: true,  transparent: true },
 };
 
 // Biome-specific tile overrides
