@@ -31,6 +31,7 @@ export function createWeapon(index: number, rarity?: Rarity, rng?: SeededRandom)
     bonusStats: r !== Rarity.Common ? { [def.bonusStat]: Math.floor(rarityMult * 2) } : undefined,
     specialEffect,
     cursed: false,
+    enhanceLevel: 0,
   };
 }
 
@@ -57,6 +58,7 @@ export function createArmor(index: number, rarity?: Rarity, rng?: SeededRandom):
     bonusStats: r !== Rarity.Common ? { [def.bonusStat]: Math.floor(rarityMult * 2) } : undefined,
     specialEffect,
     cursed: false,
+    enhanceLevel: 0,
   };
 }
 
@@ -233,6 +235,7 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
       bonusStats: cursed ? { [bonusStat]: 0 } : { [bonusStat]: bonusValue },
       specialEffect: ringEffect,
       cursed,
+      enhanceLevel: 0,
     } as RingItem;
   } else if (roll < 0.55) {
     const bonusStat = rng.pick(['str', 'dex', 'int', 'vit'] as const);
@@ -255,6 +258,7 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
       bonusStats: cursed ? { [bonusStat]: 0 } : { [bonusStat]: bonusValue },
       specialEffect: amuletEffect,
       cursed,
+      enhanceLevel: 0,
     } as AmuletItem;
   } else if (roll < 0.75) {
     const idx = rng.nextInt(0, POTION_DEFS.length - 1);
@@ -297,6 +301,9 @@ export function getItemName(item: Item): string {
   }
   let name = item.name;
   if (item.cursed && item.identified) name += ' [诅咒]';
+  if ('enhanceLevel' in item && (item as any).enhanceLevel > 0) {
+    name += `+${(item as any).enhanceLevel}`;
+  }
   return name;
 }
 

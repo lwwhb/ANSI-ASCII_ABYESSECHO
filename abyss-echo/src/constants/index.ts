@@ -790,6 +790,14 @@ export function getElementalModifier(attackElement: Element, defenderWeakness: E
 }
 
 // ============================================================
+// Equipment Enhancement
+// ============================================================
+export const ENHANCE_COSTS = [100, 250, 500];
+export const ENHANCE_SUCCESS_RATES = [1.0, 0.85, 0.60];
+export const ENHANCE_ATK_MULT = [1.1, 1.2, 1.35];
+export const ENHANCE_DEF_MULT = [1.1, 1.2, 1.35];
+
+// ============================================================
 // Daily Challenge Seed
 // ============================================================
 export function getDailySeed(): number {

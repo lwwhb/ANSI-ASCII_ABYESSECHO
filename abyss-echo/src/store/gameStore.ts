@@ -85,7 +85,8 @@ function saveGame(state: GameStore) {
       skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
       voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
       extraTurnCost, deathCause, warningPulse, pendingIdentify, pendingSacrifice, pendingAllocations,
-      bossBlessingPending, lastBossDefId, secretWalls, floorDescriptionShown } = state;
+      bossBlessingPending, lastBossDefId, secretWalls, floorDescriptionShown,
+      pendingForge, themedRooms, steamVentTurns } = state;
     const saveData = {
       version: SAVE_VERSION,
       state: {
@@ -96,6 +97,7 @@ function saveGame(state: GameStore) {
         voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
         extraTurnCost, deathCause, warningPulse, pendingIdentify, pendingSacrifice, pendingAllocations,
         bossBlessingPending, lastBossDefId, secretWalls, floorDescriptionShown,
+        pendingForge, themedRooms, steamVentTurns,
         screenFlash: null,
       },
     };
@@ -339,6 +341,9 @@ const initialState: GameState = {
   lastBossDefId: null,
   secretWalls: [],
   floorDescriptionShown: false,
+  pendingForge: false,
+  themedRooms: [],
+  steamVentTurns: [],
 };
 
 export const useGameStore = create<GameStore>((set, get) => {

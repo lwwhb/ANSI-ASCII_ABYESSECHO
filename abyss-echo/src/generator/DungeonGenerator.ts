@@ -261,6 +261,10 @@ const NEW_TILE_DEFAULTS: Record<string, { char: string; fg: string; bg: string; 
   inscription:    { char: '▐', fg: '#ddddaa', bg: 'transparent', walkable: true, transparent: true },
   secretWall:     { char: '#', fg: '#444444', bg: '#222222', walkable: true, transparent: true },
   monument:       { char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true },
+  spikeTrap:      { char: '▲', fg: '#8888ff', bg: '#222244', walkable: true, transparent: true },
+  weaponRack:     { char: '⋔', fg: '#aaaaaa', bg: '#443322', walkable: false, transparent: false },
+  forge:          { char: '⚒', fg: '#ff8800', bg: '#442200', walkable: false, transparent: false },
+  steamVent:      { char: '≋', fg: '#cccccc', bg: '#445566', walkable: true, transparent: true },
 };
 
 // ============================================================

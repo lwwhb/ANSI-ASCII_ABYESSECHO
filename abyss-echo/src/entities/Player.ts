@@ -61,6 +61,10 @@ export function createPlayer(name: string, charClass: CharacterClass): Player {
     bossBlessings: [],
     finalPactUsed: false,
     inscriptionCount: 0,
+    relics: [],
+    comboAttackCount: 0,
+    voidHeartUsed: false,
+    extraTurnAccumulator: 0,
   };
 }
 
