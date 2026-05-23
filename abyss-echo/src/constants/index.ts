@@ -1,4 +1,4 @@
-import { TileType, Biome, CharacterClass, Rarity, Element, EnemyBehavior, EnemyDef, PotionEffect, ScrollEffect, SkillDef, TalentDef, AchievementDef, GameEventDef, EquipmentEffect } from '../types';
+import { TileType, Biome, CharacterClass, Rarity, Element, EnemyBehavior, EnemyDef, PotionEffect, ScrollEffect, SkillDef, TalentDef, AchievementDef, GameEventDef, EquipmentEffect, EliteAffix, BossBlessing } from '../types';
 
 // ============================================================
 // Map Dimensions
@@ -213,7 +213,140 @@ export const BOSS_DEFS: (EnemyDef & { isBoss: true })[] = [
   { id: 'deathKnight',  name: '死亡骑士',   char: 'Ҝ', fg: '#cc44aa', hp: 150, attack: 24, defense: 15, exp: 150, behavior: EnemyBehavior.Boss, element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 15, speed: 1, dropChance: 1.0, alertRadius: 8, isBoss: true, specialAbility: 'drain', goldDrop: 120 },
   { id: 'demonLord',    name: '恶魔领主',   char: '&', fg: '#ff2222', hp: 190, attack: 30, defense: 17, exp: 250, behavior: EnemyBehavior.Boss, element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 20, speed: 1, dropChance: 1.0, alertRadius: 10, isBoss: true, specialAbility: 'fireball', goldDrop: 200 },
   { id: 'abyssKing',    name: '深渊之王',   char: 'Å', fg: '#ff44ff', hp: 280, attack: 38, defense: 20, exp: 500, behavior: EnemyBehavior.Boss, element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 25, speed: 1, dropChance: 1.0, alertRadius: 12, isBoss: true, specialAbility: 'eldritch', goldDrop: 500 },
+  { id: 'abyssHeart', name: '深渊之心', char: 'Ω', fg: '#ffffff', hp: 400, attack: 32, defense: 20, exp: 800, behavior: EnemyBehavior.Boss, element: Element.Poison, weakness: Element.Fire, resistance: Element.Poison, minFloor: 30, speed: 1, dropChance: 1.0, alertRadius: 12, isBoss: true, specialAbility: 'voidRay', goldDrop: 600 },
 ];
+
+export interface BossPhaseConfig {
+  nameZh: string;
+  hpThreshold: number;
+  atkBonus: number;
+  defBonus: number;
+  speedOverride?: number;
+  defOverride?: number;
+  newAbilities: string[];
+  summonOnTransition?: { defId: string; count: number };
+  messageZh: string;
+}
+
+export const BOSS_PHASES: Record<string, BossPhaseConfig[]> = {
+  goblinKing: [
+    { nameZh: '军令', hpThreshold: 0.5, atkBonus: 3, defBonus: 0, speedOverride: 2, newAbilities: ['warCry', 'throwNet'], messageZh: '哥布林王进入了【军令】阶段！' },
+    { nameZh: '疯狂冲锋', hpThreshold: 0.25, atkBonus: 4, defBonus: -3, newAbilities: [], summonOnTransition: { defId: 'goblin', count: 2 }, messageZh: '哥布林王进入了【疯狂冲锋】阶段！' },
+  ],
+  spiderQueen: [
+    { nameZh: '毒雾', hpThreshold: 0.5, atkBonus: 3, defBonus: 0, newAbilities: ['poisonMist'], messageZh: '蜘蛛女王进入了【毒雾】阶段！' },
+    { nameZh: '蛛后之怒', hpThreshold: 0.25, atkBonus: 4, defBonus: 0, speedOverride: 2, newAbilities: ['cocoon'], messageZh: '蜘蛛女王进入了【蛛后之怒】阶段！' },
+  ],
+  deathKnight: [
+    { nameZh: '亡者苏醒', hpThreshold: 0.5, atkBonus: 0, defBonus: 4, newAbilities: ['raiseDead'], messageZh: '死亡骑士进入了【亡者苏醒】阶段！' },
+    { nameZh: '灵魂收割', hpThreshold: 0.25, atkBonus: 6, defBonus: -4, newAbilities: [], messageZh: '死亡骑士进入了【灵魂收割】阶段！' },
+  ],
+  demonLord: [
+    { nameZh: '炼狱', hpThreshold: 0.5, atkBonus: 0, defBonus: 0, speedOverride: 2, newAbilities: ['infernalFire', 'summonLavaWorm'], messageZh: '恶魔领主进入了【炼狱】阶段！' },
+    { nameZh: '末日', hpThreshold: 0.25, atkBonus: 6, defBonus: -4, newAbilities: ['infernalCharge'], summonOnTransition: { defId: 'lavaWorm', count: 2 }, messageZh: '恶魔领主进入了【末日】阶段！' },
+  ],
+  abyssKing: [
+    { nameZh: '维度裂隙', hpThreshold: 0.5, atkBonus: 0, defBonus: 0, speedOverride: 2, newAbilities: ['dimensionTear', 'summonVoidWeaver'], messageZh: '深渊之王进入了【维度裂隙】阶段！' },
+    { nameZh: '湮灭', hpThreshold: 0.25, atkBonus: 5, defBonus: -5, newAbilities: ['annihilate'], messageZh: '深渊之王进入了【湮灭】阶段！' },
+  ],
+  abyssHeart: [
+    { nameZh: '吞噬', hpThreshold: 0.5, atkBonus: 0, defBonus: 5, speedOverride: 2, newAbilities: ['devourMinion', 'voidPulse', 'summonVoidWeaver2'], messageZh: '深渊之心进入了【吞噬】阶段！' },
+    { nameZh: '终焉', hpThreshold: 0.25, atkBonus: 10, defBonus: 0, defOverride: 5, speedOverride: 3, newAbilities: ['corrodeAll'], messageZh: '深渊之心进入了【终焉】阶段！' },
+  ],
+};
+
+export const BOSS_PASSIVES: Record<string, { id: string; nameZh: string; description: string; effect: string }[]> = {
+  goblinKing: [
+    { id: 'packLeader', nameZh: '群首', description: '同房间小怪存活时ATK+3', effect: 'minionAtkBonus' },
+  ],
+};
+
+export const ELITE_AFFIX_DEFS: Record<EliteAffix, { nameZh: string; description: string }> = {
+  [EliteAffix.Armored]: { nameZh: '铁甲', description: '受到物理伤害-30%' },
+  [EliteAffix.Frenzy]: { nameZh: '狂乱', description: '每回合ATK+0.5' },
+  [EliteAffix.Regen]: { nameZh: '再生', description: '每回合恢复5%最大HP' },
+  [EliteAffix.Vampiric]: { nameZh: '吸血', description: '攻击回复30%伤害HP' },
+  [EliteAffix.Explosive]: { nameZh: '爆裂', description: '死亡时对周围2格造成ATK×1.5伤害' },
+  [EliteAffix.Phantom]: { nameZh: '幽影', description: '30%闪避攻击' },
+};
+
+export const ELITE_CHANCE_PER_FLOOR = 0.3;
+export const ELITE_HP_MULT = 2.0;
+export const ELITE_ATK_MULT = 1.3;
+export const ELITE_DEF_BONUS = 3;
+export const ELITE_EXP_MULT = 2.5;
+export const ELITE_GOLD_MULT = 3.0;
+
+export const FLOOR_DESCRIPTIONS: Record<number, string> = {
+  1: '潮湿的石壁上渗出冰冷的水珠，火把的光芒在黑暗中摇曳。你的冒险从这里开始。',
+  2: '走廊深处传来老鼠的吱吱声，空气中弥漫着陈旧的霉味。',
+  3: '墙壁上的抓痕越来越深，似乎有什么东西在黑暗中窥视着你。',
+  4: '远处传来金属碰撞的声响，和低沉的、不似人类的笑声。',
+  5: '王座大厅的大门就在前方。门后传来号令声和战鼓的节奏——哥布林王在等待。',
+  6: '水晶从四面八方生长，折射出诡异的蓝光。地面覆盖着薄薄的冰霜，每一步都发出清脆的碎裂声。',
+  7: '洞壁上的水晶脉动如心脏般律动，幽蓝的光芒忽明忽暗。',
+  8: '空气中飘浮着微小的冰晶，呼吸间能感到肺部一阵刺痛。',
+  9: '细密的蛛网从穹顶垂落，在蓝光中泛着银色的微光。有些丝线上还挂着…不，你不想知道那是什么。',
+  10: '一片巨大的蛛网覆盖了整个穹顶，中央的阴影中有什么在缓缓蠕动。蛛丝振动着，像是在迎接猎物。',
+  11: '石棺整齐地排列在两侧，空气中弥漫着防腐香料的气味。这里安静得令人不安。',
+  12: '墓壁上的浮雕描绘着一场古老的战争，战士们的表情永远定格在恐惧之中。',
+  13: '地面散落着破碎的骨骸和锈蚀的武器。某些骨骸…似乎在微微移动。',
+  14: '黑暗中传来锁链拖地的声音，和低沉的、不似活物的叹息。',
+  15: '陵墓最深处，一座巨大的石棺散发着死亡的寒气。棺盖上的骑士浮雕缓缓睁开了眼睛。',
+  16: '空气灼热得令人窒息，地面裂缝中涌出赤红的岩浆。你感到自己的盔甲在发烫。',
+  17: '岩浆河流从墙缝中渗出，空气中弥漫着硫磺的气味。远处传来恶魔的嚎叫。',
+  18: '一阵灼热的风暴席卷而过，灰烬落在你的肩头。地面在你的脚下颤抖。',
+  19: '恶魔的低语在耳边回响，试图侵蚀你的意志。你的影子似乎不再听从你的动作。',
+  20: '炼狱深处，巨大的恶魔端坐在熔岩王座上，双瞳如两团烈焰。"又一个灵魂…来为我燃烧。"',
+  21: '现实开始扭曲。墙壁在呼吸，地面在脉动，你的手穿过了一张桌子。',
+  22: '时间在这里失去了意义。你看到自己的影子在不同方向行走，它们似乎有自己的意志。',
+  23: '虚空在吞噬一切——光、声音、记忆。你开始忘记来时的路，但脚步无法停下。',
+  24: '维度的裂隙撕裂了空间，你看到另一个自己在裂隙对面，面容扭曲，嘴角上扬。',
+  25: '深渊的尽头，一个不属于这个维度的存在注视着你。"你终于来了，回响者。"',
+  30: '一切归于寂静。没有光，没有暗，没有声音。只有一种不可名状的存在感，像宇宙的心跳。深渊之心在这里等待了亿万年——不是为了毁灭，而是为了被理解。但理解它的代价，是失去自己。',
+};
+
+export const INSCRIPTION_TEXTS: Record<string, string> = {
+  stoneDungeon: '这里曾是王国的地牢，关押着最危险的犯人。直到那个夜晚，地底传来了回响…从此再无人离开。',
+  crystalCavern: '水晶并非天然形成。古帝国的法师们将魔法封印其中，以抵御来自更深处的侵蚀。但水晶在碎裂…',
+  ancientCrypt: '亡者不愿安息。他们被某种力量唤醒，在永恒的黑暗中游荡。击碎他们的不是死亡，而是希望。',
+  lavaCore: '炼狱之火并非惩罚，而是选择。只有最强大的灵魂才能在烈焰中重塑。其他的，只会化为灰烬。',
+  voidAbyss: '深渊不是尽头。深渊是开始。一切从虚空中诞生，一切终将回归。你是回响，还是回响的回响？',
+};
+
+export interface BossBlessingDef {
+  id: BossBlessing;
+  nameZh: string;
+  description: string;
+  icon: string;
+}
+
+export const BOSS_BLESSING_OPTIONS: Record<string, [BossBlessingDef, BossBlessingDef]> = {
+  goblinKing: [
+    { id: BossBlessing.Headhunter, nameZh: '猎首者', description: '对精英/小怪伤害+15%', icon: '🗡️' },
+    { id: BossBlessing.TribalHeart, nameZh: '部落之心', description: '有小怪在场时DEF+3', icon: '🛡️' },
+  ],
+  spiderQueen: [
+    { id: BossBlessing.WebWeaver, nameZh: '织网者', description: '攻击15%冰冻敌人1回合', icon: '🕷️' },
+    { id: BossBlessing.VenomBlood, nameZh: '毒液之血', description: '受到近战伤害时30%反毒', icon: '☠️' },
+  ],
+  deathKnight: [
+    { id: BossBlessing.UndyingWill, nameZh: '不灭意志', description: 'HP<25%时ATK+30%', icon: '⚔️' },
+    { id: BossBlessing.DeathPact, nameZh: '死亡契约', description: '击杀回复5%最大HP', icon: '💀' },
+  ],
+  demonLord: [
+    { id: BossBlessing.InfernalSoul, nameZh: '炼狱之魂', description: '火伤减免50%，近战15%燃烧', icon: '🔥' },
+    { id: BossBlessing.DemonPower, nameZh: '恶魔之力', description: '技能伤害+20%', icon: '💪' },
+  ],
+  abyssKing: [
+    { id: BossBlessing.VoidWalk, nameZh: '虚空行走', description: '每层开始获得3回合随机buff', icon: '🌀' },
+    { id: BossBlessing.AbyssEye, nameZh: '深渊之眼', description: '视野范围+2', icon: '👁️' },
+  ],
+  abyssHeart: [
+    { id: BossBlessing.EchoBody, nameZh: '回响之体', description: '全属性+3', icon: '💎' },
+    { id: BossBlessing.FinalPact, nameZh: '终焉之约', description: '每层首次致命伤害保留1HP(每层1次)', icon: '🌟' },
+  ],
+};
 
 // ============================================================
 // Item Definitions
@@ -483,7 +616,7 @@ export const BIOME_CONFIG: Record<Biome, {
     enemyIds: ['slime', 'rat', 'bat', 'goblin', 'caveScorpion', 'gargoyle', 'skeleton'],
     hasWater: false, hasLava: false, hasGas: false, trapChance: 0.03,
     shopChance: 0.15, eventChance: 0.1,
-    mapWidth: 70, mapHeight: 24, itemsPerFloorBase: 5, itemsPerFloorGrowth: 1.2,
+    mapWidth: 80, mapHeight: 28, itemsPerFloorBase: 5, itemsPerFloorGrowth: 1.2,
     foodDropMultiplier: 1.5, scrollDropMultiplier: 1.3, potionDropMultiplier: 1.0,
   },
   [Biome.CrystalCavern]: {
@@ -491,7 +624,7 @@ export const BIOME_CONFIG: Record<Biome, {
     enemyIds: ['skeleton', 'spider', 'orc', 'shadow', 'crystalGuard', 'glowJelly', 'darkKnight', 'wraith'],
     hasWater: true, hasLava: false, hasGas: false, trapChance: 0.04,
     shopChance: 0.2, eventChance: 0.15,
-    mapWidth: 80, mapHeight: 28, itemsPerFloorBase: 4, itemsPerFloorGrowth: 1.2,
+    mapWidth: 90, mapHeight: 32, itemsPerFloorBase: 4, itemsPerFloorGrowth: 1.2,
     foodDropMultiplier: 1.2, scrollDropMultiplier: 1.5, potionDropMultiplier: 1.0,
   },
   [Biome.AncientCrypt]: {
@@ -499,7 +632,7 @@ export const BIOME_CONFIG: Record<Biome, {
     enemyIds: ['darkKnight', 'wraith', 'troll', 'mimic', 'tombGuard', 'soulEater', 'demon', 'gorgon'],
     hasWater: false, hasLava: false, hasGas: true, trapChance: 0.06,
     shopChance: 0.15, eventChance: 0.2,
-    mapWidth: 70, mapHeight: 30, itemsPerFloorBase: 3, itemsPerFloorGrowth: 1.0,
+    mapWidth: 80, mapHeight: 34, itemsPerFloorBase: 3, itemsPerFloorGrowth: 1.0,
     foodDropMultiplier: 1.0, scrollDropMultiplier: 2.0, potionDropMultiplier: 1.0,
   },
   [Biome.LavaCore]: {
@@ -507,7 +640,7 @@ export const BIOME_CONFIG: Record<Biome, {
     enemyIds: ['demon', 'gorgon', 'vampire', 'lich', 'lavaWorm', 'obsidianGolem', 'dragon', 'voidWalker'],
     hasWater: false, hasLava: true, hasGas: false, trapChance: 0.05,
     shopChance: 0.1, eventChance: 0.15,
-    mapWidth: 90, mapHeight: 28, itemsPerFloorBase: 3, itemsPerFloorGrowth: 0.8,
+    mapWidth: 100, mapHeight: 32, itemsPerFloorBase: 3, itemsPerFloorGrowth: 0.8,
     foodDropMultiplier: 1.0, scrollDropMultiplier: 1.0, potionDropMultiplier: 1.5,
   },
   [Biome.VoidAbyss]: {
@@ -515,7 +648,7 @@ export const BIOME_CONFIG: Record<Biome, {
     enemyIds: ['dragon', 'voidWalker', 'ancientOne', 'voidWeaver', 'mirrorImage'],
     hasWater: false, hasLava: true, hasGas: true, trapChance: 0.07,
     shopChance: 0.08, eventChance: 0.1,
-    mapWidth: 100, mapHeight: 32, itemsPerFloorBase: 2, itemsPerFloorGrowth: 0.6,
+    mapWidth: 110, mapHeight: 36, itemsPerFloorBase: 2, itemsPerFloorGrowth: 0.6,
     foodDropMultiplier: 0.85, scrollDropMultiplier: 1.0, potionDropMultiplier: 0.8,
   },
 };
@@ -532,6 +665,67 @@ export function getMapSizeForBiome(biome: Biome): { width: number; height: numbe
   const config = BIOME_CONFIG[biome];
   return { width: config.mapWidth, height: config.mapHeight };
 }
+
+export const SPECIAL_ROOM_CHANCES = {
+  eliteRoom: 0.4,
+  treasureRoom: 0.15,
+  fountainRoom: 0.1,
+  altarRoom: 0.1,
+  inscriptionRoom: 0.2,
+  trapRoom: 0.15,
+  challengeRoom: 0.08,
+};
+
+export interface ArenaObjectDef {
+  type: TileType;
+  relX: number;
+  relY: number;
+}
+
+export const BOSS_ARENA_OBJECTS: Record<string, ArenaObjectDef[]> = {
+  goblinKing: [
+    { type: TileType.Throne, relX: 0, relY: 0 },
+    { type: TileType.Barricade, relX: 0, relY: 4 },
+  ],
+  spiderQueen: [
+    { type: TileType.SpiderEgg, relX: -3, relY: -3 },
+    { type: TileType.SpiderEgg, relX: 3, relY: -3 },
+    { type: TileType.SpiderEgg, relX: -3, relY: 3 },
+    { type: TileType.SpiderEgg, relX: 3, relY: 3 },
+  ],
+  deathKnight: [
+    { type: TileType.Sarcophagus, relX: -4, relY: -2 },
+    { type: TileType.Sarcophagus, relX: -4, relY: 2 },
+    { type: TileType.Sarcophagus, relX: 4, relY: -2 },
+    { type: TileType.Sarcophagus, relX: 4, relY: 2 },
+    { type: TileType.Altar, relX: 0, relY: 0 },
+  ],
+  demonLord: [
+    { type: TileType.LavaPool, relX: -4, relY: -4 },
+    { type: TileType.LavaPool, relX: 4, relY: -4 },
+    { type: TileType.LavaPool, relX: -4, relY: 4 },
+    { type: TileType.LavaPool, relX: 4, relY: 4 },
+  ],
+  abyssKing: [
+    { type: TileType.VoidRift, relX: -3, relY: 0 },
+    { type: TileType.VoidRift, relX: 3, relY: 0 },
+    { type: TileType.VoidRift, relX: 0, relY: 3 },
+    { type: TileType.VoidPillar, relX: -5, relY: -5 },
+    { type: TileType.VoidPillar, relX: 5, relY: -5 },
+    { type: TileType.VoidPillar, relX: -5, relY: 5 },
+    { type: TileType.VoidPillar, relX: 5, relY: 5 },
+  ],
+  abyssHeart: [
+    { type: TileType.VoidPillar, relX: -5, relY: -5 },
+    { type: TileType.VoidPillar, relX: 5, relY: -5 },
+    { type: TileType.VoidPillar, relX: -5, relY: 5 },
+    { type: TileType.VoidPillar, relX: 5, relY: 5 },
+    { type: TileType.VoidPillar, relX: 0, relY: -6 },
+    { type: TileType.CorruptionPool, relX: 0, relY: 0 },
+    { type: TileType.HealCrystal, relX: -6, relY: 0 },
+    { type: TileType.HealCrystal, relX: 6, relY: 0 },
+  ],
+};
 
 // ============================================================
 // Dungeon Generation Constants
