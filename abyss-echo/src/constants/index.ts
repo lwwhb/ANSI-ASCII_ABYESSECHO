@@ -96,6 +96,21 @@ export const TILE_CHARS: Record<TileType, { char: string; fg: string; bg: string
   [TileType.Portal]:       { char: '⊙', fg: '#cc44ff', bg: '#0a0a1e', walkable: true,  transparent: true },
   [TileType.Torch]:        { char: '♫', fg: '#ffaa44', bg: '#1a221a', walkable: false, transparent: true },
   [TileType.Sarcophagus]:  { char: '■', fg: '#888877', bg: '#1a221a', walkable: false, transparent: false },
+  [TileType.Throne]:       { char: '♔', fg: '#ffd700', bg: '#1a0808', walkable: false, transparent: false },
+  [TileType.Barricade]:    { char: '▦', fg: '#8b4513', bg: '#1a0808', walkable: false, transparent: true },
+  [TileType.WebFloor]:     { char: '≈', fg: '#aaaaaa', bg: '#0a0a1a', walkable: true,  transparent: true },
+  [TileType.SpiderEgg]:    { char: '◉', fg: '#cccccc', bg: '#0a0a1a', walkable: true,  transparent: true },
+  [TileType.Altar]:        { char: '⛩', fg: '#aaaaff', bg: '#140a14', walkable: true,  transparent: true },
+  [TileType.LavaPool]:     { char: '≈', fg: '#ff4400', bg: '#1a0a04', walkable: false, transparent: true },
+  [TileType.VoidRift]:     { char: '◎', fg: '#ff44ff', bg: '#100818', walkable: true,  transparent: true },
+  [TileType.VoidPillar]:   { char: '█', fg: '#8800aa', bg: '#100818', walkable: false, transparent: false },
+  [TileType.CorruptionPool]: { char: '◎', fg: '#aa00aa', bg: '#100818', walkable: true,  transparent: true },
+  [TileType.HealCrystal]:  { char: '◆', fg: '#00ffaa', bg: '#100818', walkable: true,  transparent: true },
+  [TileType.EliteDoor]:    { char: '▦', fg: '#ffd700', bg: 'transparent', walkable: false, transparent: true },
+  [TileType.Fountain]:     { char: '⌠', fg: '#44aaff', bg: 'transparent', walkable: true,  transparent: true },
+  [TileType.Inscription]:  { char: '▐', fg: '#ddddaa', bg: 'transparent', walkable: true,  transparent: true },
+  [TileType.SecretWall]:   { char: '#', fg: '#444444', bg: '#222222', walkable: true,  transparent: true },
+  [TileType.Monument]:     { char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true,  transparent: true },
 };
 
 // Biome-specific tile overrides

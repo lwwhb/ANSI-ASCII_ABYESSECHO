@@ -356,15 +356,15 @@ export function placeEliteAndSpecialRooms(
   floor: number,
   rng: SeededRandom,
   enemyIds: string[],
-  biome: Biome,
+  _biome: Biome,
 ): {
-  eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | null;
-  eliteRoom: Room | null;
+  eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | undefined;
+  eliteRoom: Room | undefined;
   specialRooms: { type: TileType; room: Room; pos: Position }[];
   secretWalls: Position[];
 } {
-  let eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | null = null;
-  let eliteRoom: Room | null = null;
+  let eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | undefined = undefined;
+  let eliteRoom: Room | undefined = undefined;
   const specialRooms: { type: TileType; room: Room; pos: Position }[] = [];
   const secretWalls: Position[] = [];
 

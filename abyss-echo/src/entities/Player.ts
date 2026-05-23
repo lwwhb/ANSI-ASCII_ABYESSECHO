@@ -58,6 +58,9 @@ export function createPlayer(name: string, charClass: CharacterClass): Player {
     skillCooldowns: [0, 0, 0],
     talents: [],
     gold: 0,
+    bossBlessings: [],
+    finalPactUsed: false,
+    inscriptionCount: 0,
   };
 }
 

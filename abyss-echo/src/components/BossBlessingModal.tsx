@@ -1,7 +1,6 @@
 import React from 'react';
 import { useGameStore } from '../store/gameStore';
-import { BossBlessing, BossBlessingDef } from '../types';
-import { BOSS_BLESSING_OPTIONS } from '../constants';
+import { BossBlessingDef, BOSS_BLESSING_OPTIONS } from '../constants';
 
 const BossBlessingModal: React.FC = () => {
   const bossBlessingPending = useGameStore(s => s.bossBlessingPending);

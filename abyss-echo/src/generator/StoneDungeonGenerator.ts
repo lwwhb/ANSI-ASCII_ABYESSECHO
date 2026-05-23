@@ -72,10 +72,10 @@ export function generateStoneDungeon(floor: number, seed: number): DungeonData {
   let shopPos: Position | undefined;
   let eventPos: Position | undefined;
 
-  const specialRooms = rooms.length > 2 ? rooms.slice(1, -1) : rooms.slice(1);
-  if (specialRooms.length > 0) {
+  const eligibleRooms = rooms.length > 2 ? rooms.slice(1, -1) : rooms.slice(1);
+  if (eligibleRooms.length > 0) {
     if (rng.chance(config.shopChance)) {
-      const shopRoom = rng.pick(specialRooms);
+      const shopRoom = rng.pick(eligibleRooms);
       shopPos = {
         x: rng.nextInt(shopRoom.x + 1, shopRoom.x + shopRoom.w - 2),
         y: rng.nextInt(shopRoom.y + 1, shopRoom.y + shopRoom.h - 2),
@@ -84,7 +84,7 @@ export function generateStoneDungeon(floor: number, seed: number): DungeonData {
     }
 
     if (rng.chance(config.eventChance)) {
-      const eventRoom = rng.pick(specialRooms);
+      const eventRoom = rng.pick(eligibleRooms);
       eventPos = {
         x: rng.nextInt(eventRoom.x + 1, eventRoom.x + eventRoom.w - 2),
         y: rng.nextInt(eventRoom.y + 1, eventRoom.y + eventRoom.h - 2),

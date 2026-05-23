@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 import {
   GameState, GamePhase, Player, CharacterClass, Enemy, Item,
-  TileType, Message, MessageCategory, Stats, EquipmentSlot,
+  Tile, TileType, Message, MessageCategory, Stats, EquipmentSlot,
   StatusEffectType, ItemType, PotionEffect, ScrollEffect, Element, Rarity,
   WeaponItem, ArmorItem, PotionItem, ScrollItem, FoodItem, FloorItem,
   GameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
   BossBlessing, EliteAffix,
 } from '../types';
-import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, BOSS_PASSIVES, INSCRIPTION_TEXTS } from '../constants';
+import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS } from '../constants';
 import { createScroll } from '../entities/Items';
 import { createFood } from '../entities/Items';
 import { generateDungeon, createTile } from '../generator/DungeonGenerator';
@@ -158,7 +158,7 @@ function hasEquipmentEffect(player: Player, effect: EquipmentEffect): boolean {
 }
 
 // 特效中文名
-const EFFECT_NAME_ZH: Record<EquipmentEffect, string> = {
+const _EFFECT_NAME_ZH: Record<EquipmentEffect, string> = {
   [EquipmentEffect.LifeSteal]: '吸血',
   [EquipmentEffect.ManaSteal]: '吸魔',
   [EquipmentEffect.CritBonus]: '暴击强化',
@@ -835,7 +835,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           );
 
           // Boss phase skill selection
-          let originalSpecialAbility = enemy.specialAbility;
+          const originalSpecialAbility = enemy.specialAbility;
           if (enemy.isBoss && enemy.bossPhase > 1) {
             const phases = BOSS_PHASES[enemy.defId];
             if (phases) {
@@ -1259,7 +1259,6 @@ export const useGameStore = create<GameStore>((set, get) => {
           if (pos) {
             const raisedEnemy = createEnemy(deadDefId, pos, false, state.currentFloor);
             if (raisedEnemy) {
-              const eIdx = enemies.length;
               enemies.push({ ...raisedEnemy, hp: Math.floor(raisedEnemy.maxHp * 0.3) });
               raised++;
             }
@@ -1653,7 +1652,6 @@ export const useGameStore = create<GameStore>((set, get) => {
         let finalDamage = result.damage;
         if (enemy.isElite && enemy.eliteAffix === EliteAffix.Phantom) {
           if (rng.next() < 0.3) {
-            finalDamage = 0;
             addMessages([msg(`${enemy.name}闪避了攻击！`, MessageCategory.Combat, '#cccccc')]);
             // Skip the rest of damage application
             const enemies = state.enemies.map(e => {
@@ -1990,8 +1988,6 @@ export const useGameStore = create<GameStore>((set, get) => {
         // LavaPool: Can't walk into it (like Lava)
         // Already handled by walkable:false — no special interaction needed
 
-        if (tile.type === TileType.Sarcophagus) {
-        }
         if (tile.type === TileType.Sarcophagus) {
           // 50% good, 50% bad
           if (rng.chance(0.5)) {

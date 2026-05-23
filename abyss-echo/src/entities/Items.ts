@@ -1,6 +1,6 @@
 import {
   Item, WeaponItem, ArmorItem, RingItem, AmuletItem, PotionItem, ScrollItem, FoodItem,
-  ItemType, Rarity, Element, EquipmentEffect,
+  ItemType, Rarity, EquipmentEffect,
 } from '../types';
 import {
   WEAPON_DEFS, ARMOR_DEFS, POTION_DEFS, SCROLL_DEFS, FOOD_DEFS,
