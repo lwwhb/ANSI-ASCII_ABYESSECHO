@@ -1,4 +1,4 @@
-import { Tile, TileType, Position, Biome, EliteAffix, BossArenaData } from '../types';
+import { Tile, TileType, Position, Biome, EliteAffix, BossArenaData, RoomTheme } from '../types';
 import { SeededRandom } from '../utils/random';
 import {
   MIN_ROOM_SIZE, MAX_ROOM_SIZE, ROOM_PADDING,
@@ -47,6 +47,7 @@ export interface DungeonData {
   specialRooms: { type: TileType; room: Room; pos: Position }[];
   secretWalls: Position[];
   bossArenaData?: BossArenaData;
+  themedRooms: { room: Room; theme: RoomTheme }[];
 }
 
 // Export shared utility functions for use by biome-specific generators

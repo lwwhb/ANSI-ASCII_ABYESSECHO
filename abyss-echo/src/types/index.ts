@@ -47,6 +47,10 @@ export enum TileType {
   Inscription = 'inscription',
   SecretWall = 'secretWall',
   Monument = 'monument',
+  SpikeTrap = 'spikeTrap',       // 晶刺：站上去8伤害，对敌人也有效
+  WeaponRack = 'weaponRack',     // 武器架：3选1免费武器
+  Forge = 'forge',               // 锻造台：花金币强化装备
+  SteamVent = 'steamVent',       // 蒸汽口：每3回合喷发遮挡视野
 }
 
 export interface Tile {
@@ -181,6 +185,7 @@ export interface WeaponItem extends ItemBase {
   element: Element;
   bonusStats?: Partial<Stats>;
   specialEffect?: EquipmentEffect;
+  enhanceLevel?: 0 | 1 | 2 | 3;
 }
 
 export interface ArmorItem extends ItemBase {
@@ -189,18 +194,21 @@ export interface ArmorItem extends ItemBase {
   evasion: number;
   bonusStats?: Partial<Stats>;
   specialEffect?: EquipmentEffect;
+  enhanceLevel?: 0 | 1 | 2 | 3;
 }
 
 export interface RingItem extends ItemBase {
   type: ItemType.Ring;
   bonusStats: Partial<Stats>;
   specialEffect?: EquipmentEffect;
+  enhanceLevel?: 0 | 1 | 2 | 3;
 }
 
 export interface AmuletItem extends ItemBase {
   type: ItemType.Amulet;
   bonusStats: Partial<Stats>;
   specialEffect?: EquipmentEffect;
+  enhanceLevel?: 0 | 1 | 2 | 3;
 }
 
 export interface PotionItem extends ItemBase {
@@ -344,6 +352,62 @@ export enum BossBlessing {
   FinalPact = 'finalPact',
 }
 
+export enum RelicRarity {
+  Common = 'common',
+  Rare = 'rare',
+  Epic = 'epic',
+}
+
+export enum RelicId {
+  HungerRing = 'hungerRing',
+  MirrorShield = 'mirrorShield',
+  GreedCrown = 'greedCrown',
+  SixthSense = 'sixthSense',
+  LuckyCoin = 'luckyCoin',
+  SilentStep = 'silentStep',
+  PoisonGland = 'poisonGland',
+  FlameHeart = 'flameHeart',
+  FrostTouch = 'frostTouch',
+  ThunderMark = 'thunderMark',
+  LifeSeed = 'lifeSeed',
+  OldMap = 'oldMap',
+  ComboRing = 'comboRing',
+  SacrificialDagger = 'sacrificialDagger',
+  ElementResonance = 'elementResonance',
+  EchoShard = 'echoShard',
+  CurseVessel = 'curseVessel',
+  BlacksmithHammer = 'blacksmithHammer',
+  ExplorerDiary = 'explorerDiary',
+  TimeHourglass = 'timeHourglass',
+  VoidHeart = 'voidHeart',
+  ChaosCore = 'chaosCore',
+  EternalFlame = 'eternalFlame',
+  FateWeaver = 'fateWeaver',
+}
+
+export enum RoomTheme {
+  StorageRoom = 'storageRoom',
+  DarkShrine = 'darkShrine',
+  TrainingGround = 'trainingGround',
+  InscriptionCorridor = 'inscriptionCorridor',
+  RefractionHall = 'refractionHall',
+  UndergroundRiver = 'undergroundRiver',
+  AstrologyChamber = 'astrologyChamber',
+  CrystalArena = 'crystalArena',
+  TombChamber = 'tombChamber',
+  CursedCorridor = 'cursedCorridor',
+  HeroHall = 'heroHall',
+  WhisperHall = 'whisperHall',
+  LavaForge = 'lavaForge',
+  SacrificeAltar = 'sacrificeAltar',
+  SteamGeyser = 'steamGeyser',
+  DragonNest = 'dragonNest',
+  VoidRift = 'voidRiftRoom',
+  CorruptedSanctum = 'corruptedSanctum',
+  ObserverEye = 'observerEye',
+  VoidAltar = 'voidAltarRoom',
+}
+
 export interface EnemyDef {
   id: string;
   name: string;
@@ -422,6 +486,10 @@ export interface Player extends EntityBase {
   bossBlessings: BossBlessing[];
   finalPactUsed: boolean;
   inscriptionCount: number;
+  relics: RelicId[];
+  comboAttackCount: number;
+  voidHeartUsed: boolean;
+  extraTurnAccumulator: number;
 }
 
 // --- Messages ---
@@ -500,6 +568,9 @@ export interface GameState {
   lastBossDefId: string | null;
   secretWalls: Position[];
   floorDescriptionShown: boolean;
+  pendingForge: boolean;
+  themedRooms: { room: { x: number; y: number; w: number; h: number; centerX: number; centerY: number; theme?: RoomTheme }; theme: RoomTheme }[];
+  steamVentTurns: { x: number; y: number; spawnTurn: number }[];
 }
 
 export interface HighScore {
@@ -516,6 +587,60 @@ export interface HighScore {
 export interface BossArenaData {
   bossDefId: string;
   objects: { type: TileType; x: number; y: number }[];
+}
+
+export interface RelicDef {
+  id: RelicId;
+  name: string;
+  icon: string;
+  rarity: RelicRarity;
+  description: string;
+  elementAffinity?: Element;
+}
+
+export interface ThemedRoomConfig {
+  theme: RoomTheme;
+  nameZh: string;
+  narrativeText: string;
+  biome: Biome;
+  terrainTemplate: { type: TileType; offsetX: number; offsetY: number }[];
+  specialMechanic: string;
+  elementAffinity?: Element;
+  relicRarityWeights: { common: number; rare: number; epic: number };
+}
+
+export interface ChainReactionDef {
+  id: string;
+  nameZh: string;
+  elements: [Element, Element];
+  requiresTerrain?: TileType[];
+  damageMultiplier: number;
+  range: number;
+  additionalEffect: string;
+  messageTemplate: string;
+}
+
+export interface EventOptionDef {
+  id: string;
+  textZh: string;
+  effectId: string;
+  condition?: EventCondition;
+  isRare?: boolean;
+}
+
+export type EventCondition =
+  | { type: 'stat'; stat: 'int' | 'dex' | 'str'; min: number }
+  | { type: 'resource'; resource: 'gold' | 'hp' | 'mp'; minPercent: number }
+  | { type: 'relicCount'; min: number }
+  | { type: 'bossKillCount'; min: number }
+  | { type: 'inscriptionCount'; min: number };
+
+export interface ExtendedGameEventDef {
+  id: string;
+  nameZh: string;
+  description: string;
+  biomeAffinity: Biome[];
+  options: EventOptionDef[];
 }
 
 // --- Direction ---
