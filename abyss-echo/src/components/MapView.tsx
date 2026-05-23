@@ -65,8 +65,13 @@ const MapView: React.FC = () => {
           // Enemy at this position
           const enemyHere = enemyMap.get(`${x},${y}`);
           if (enemyHere) {
-            char = enemyHere.char;
-            fg = enemyHere.fg;
+            if (enemyHere.isElite) {
+              char = '★';
+              fg = '#ffd700';
+            } else {
+              char = enemyHere.char;
+              fg = enemyHere.fg;
+            }
           }
 
           // Player
