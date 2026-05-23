@@ -6,7 +6,7 @@ import {
   WeaponItem, ArmorItem, PotionItem, ScrollItem, FoodItem, FloorItem,
   GameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
 } from '../types';
-import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS } from '../constants';
+import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS } from '../constants';
 import { createScroll } from '../entities/Items';
 import { createFood } from '../entities/Items';
 import { generateDungeon, createTile } from '../generator/DungeonGenerator';
@@ -16,7 +16,7 @@ import {
   getEnemyAction, getTrapEffect, applyLevelUp, checkLevelUp, isTalentLevel,
 } from '../engine/Combat';
 import { createPlayer, getEffectiveStats, getPlayerWeaponDamage, getPlayerWeaponElement, equipItem, canEquipItem, getPlayerDefense, getMaxInventorySize, genId } from '../entities/Player';
-import { createEnemy } from '../entities/Enemy';
+import { createEnemy, createEliteEnemy } from '../entities/Enemy';
 import { createRandomItem, getItemName, identifyItem, createShopItems } from '../entities/Items';
 import { SeededRandom } from '../utils/random';
 import { AudioManager } from '../audio/AudioManager';
@@ -83,7 +83,8 @@ function saveGame(state: GameStore) {
       isDailyChallenge, shopItems, currentEvent,
       skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
       voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
-      extraTurnCost, deathCause, warningPulse, pendingIdentify, pendingSacrifice, pendingAllocations } = state;
+      extraTurnCost, deathCause, warningPulse, pendingIdentify, pendingSacrifice, pendingAllocations,
+      bossBlessingPending, lastBossDefId, secretWalls, floorDescriptionShown } = state;
     const saveData = {
       version: SAVE_VERSION,
       state: {
@@ -93,6 +94,7 @@ function saveGame(state: GameStore) {
         skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
         voidCorruption, currentFragmentTurns, lavaTideActive, lavaTideTurnsRemaining, lavaTideTiles,
         extraTurnCost, deathCause, warningPulse, pendingIdentify, pendingSacrifice, pendingAllocations,
+        bossBlessingPending, lastBossDefId, secretWalls, floorDescriptionShown,
         screenFlash: null,
       },
     };
@@ -313,6 +315,10 @@ const initialState: GameState = {
   pendingIdentify: false,
   pendingSacrifice: false,
   pendingAllocations: { str: 0, dex: 0, int: 0, vit: 0 },
+  bossBlessingPending: false,
+  lastBossDefId: null,
+  secretWalls: [],
+  floorDescriptionShown: false,
 };
 
 export const useGameStore = create<GameStore>((set, get) => {
@@ -1047,6 +1053,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (enemy) enemies.push(enemy);
     }
 
+    // Elite enemy
+    if (dungeon.eliteEnemy) {
+      const elite = createEliteEnemy(dungeon.eliteEnemy.defId, dungeon.eliteEnemy.pos, floor, dungeon.eliteEnemy.eliteAffix);
+      if (elite) enemies.push(elite);
+    }
+
     // Create items
     const items: FloorItem[] = [];
     const rng = new SeededRandom(state.seed + floor * 31);
@@ -1090,6 +1102,8 @@ export const useGameStore = create<GameStore>((set, get) => {
       lavaTideTurnsRemaining: 0,
       lavaTideTiles: [],
       extraTurnCost: 0,
+      secretWalls: dungeon.secretWalls || [],
+      floorDescriptionShown: false,
     });
 
     // Clear remembered map from previous floor
@@ -1098,6 +1112,14 @@ export const useGameStore = create<GameStore>((set, get) => {
     addMessages([
       msg(`你来到了第 ${floor} 层 - ${biomeConfig.nameZh}`, MessageCategory.Story, '#ffcc44'),
     ]);
+
+    // Floor atmosphere description
+    const desc = FLOOR_DESCRIPTIONS[floor];
+    const nextState = get();
+    if (desc && !nextState.floorDescriptionShown) {
+      addMessages([msg(desc, MessageCategory.Story, '#88ccff')]);
+      set({ floorDescriptionShown: true });
+    }
 
     updateFOV();
 
@@ -1116,7 +1138,9 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     newGame: (name: string, charClass: CharacterClass, isDaily?: boolean) => {
       msgId = 0;
-      const player = createPlayer(name, charClass);
+      let player = createPlayer(name, charClass);
+      // Initialize new Player fields
+      player = { ...player, bossBlessings: [], finalPactUsed: false, inscriptionCount: 0 };
       const seed = isDaily ? (new Date().getUTCFullYear() * 10000 + (new Date().getUTCMonth() + 1) * 100 + new Date().getUTCDate()) : Date.now();
 
       // Apply legacy item
@@ -2599,7 +2623,13 @@ export const useGameStore = create<GameStore>((set, get) => {
       // Restore all game state
       set({
         phase: GamePhase.Playing,
-        player: loadedState.player ? { ...loadedState.player, bossKillCount: loadedState.player.bossKillCount ?? 0 } : null,
+        player: loadedState.player ? {
+          ...loadedState.player,
+          bossKillCount: loadedState.player.bossKillCount ?? 0,
+          bossBlessings: loadedState.player.bossBlessings ?? [],
+          finalPactUsed: loadedState.player.finalPactUsed ?? false,
+          inscriptionCount: loadedState.player.inscriptionCount ?? 0,
+        } : null,
         currentFloor: loadedState.currentFloor,
         map: loadedState.map,
         width: loadedState.width ?? 80,
@@ -2631,6 +2661,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         pendingIdentify: false,
         pendingSacrifice: false,
         pendingAllocations: loadedState.pendingAllocations ?? { str: 0, dex: 0, int: 0, vit: 0 },
+        bossBlessingPending: loadedState.bossBlessingPending ?? false,
+        lastBossDefId: loadedState.lastBossDefId ?? null,
+        secretWalls: loadedState.secretWalls ?? [],
+        floorDescriptionShown: true,  // Already shown on original floor
       });
 
       // Suspend save: delete after loading to prevent save-scumming
