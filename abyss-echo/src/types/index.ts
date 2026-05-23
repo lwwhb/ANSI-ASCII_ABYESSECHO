@@ -550,7 +550,7 @@ export interface GameState {
   legacyItem: Item | null;
   isDailyChallenge: boolean;
   shopItems: Item[];
-  currentEvent: GameEventDef | null;
+  currentEvent: GameEventDef | ExtendedGameEventDef | null;
   screenFlash: string | null;
   skillUseCount: number;
   shopBuyCount: number;

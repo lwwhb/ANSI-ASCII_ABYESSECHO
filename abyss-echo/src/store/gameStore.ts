@@ -3,20 +3,19 @@ import {
   GameState, GamePhase, Player, CharacterClass, Enemy, Item,
   Tile, TileType, Message, MessageCategory, Stats, EquipmentSlot,
   StatusEffectType, ItemType, PotionEffect, ScrollEffect, Element, Rarity,
-  WeaponItem, ArmorItem, PotionItem, ScrollItem, FoodItem, FloorItem,
-  GameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
-  BossBlessing, EliteAffix, RelicId, RelicRarity, RoomTheme,
+  WeaponItem, ArmorItem, RingItem, AmuletItem, PotionItem, ScrollItem, FoodItem, FloorItem,
+  GameEventDef, ExtendedGameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
+  BossBlessing, EliteAffix, RelicId, RoomTheme,
 } from '../types';
 import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS, ENHANCE_COSTS, ENHANCE_SUCCESS_RATES, ENHANCE_ATK_MULT, ENHANCE_DEF_MULT } from '../constants';
-import { RELIC_DEFS, RELICS_BY_RARITY, ELEMENT_RELICS } from '../constants/relics';
-import { THEMED_ROOM_CONFIGS, THEMES_BY_BIOME } from '../constants/themedRooms';
-import { CHAIN_REACTIONS, TERRAIN_ELEMENTS, isSteamVentActive } from '../constants/elementalChain';
+import { RELIC_DEFS } from '../constants/relics';
+import { THEMED_ROOM_CONFIGS } from '../constants/themedRooms';
 import { EXTENDED_EVENT_DEFS } from '../constants/events';
-import { hasRelic, getRelicAtkModifier, getRelicGoldModifier, getRelicShopPriceModifier,
-         getRelicForgeCostModifier, getRelicBurnDamageModifier, getRelicPoisonDamageModifier,
-         isRelicBurnImmune, rollRelicStatusProc, getCurseVesselBonus, getElementResonanceActive,
-         shouldSilentStepPreventAggro, rollRandomRelic } from '../engine/RelicEffects';
-import { checkChainReactionWithMap, getTerrainElementsAt, getEnemyElementDebuffs, executeChainReaction, ChainResult } from '../engine/ElementalChain';
+import { hasRelic, getRelicAtkModifier, getRelicGoldModifier,
+         getRelicForgeCostModifier,
+         isRelicBurnImmune, rollRelicStatusProc,
+         rollRandomRelic } from '../engine/RelicEffects';
+import { checkChainReactionWithMap, getEnemyElementDebuffs, executeChainReaction } from '../engine/ElementalChain';
 import { createScroll } from '../entities/Items';
 import { createFood } from '../entities/Items';
 import { generateDungeon, createTile } from '../generator/DungeonGenerator';
@@ -539,21 +538,21 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Process player status effects
     if (player.statusEffects.length > 0) {
       // Relic: FlameHeart - Burn damage * 1.5
-      if (hasRelic(player, 'flameHeart')) {
+      if (hasRelic(player, RelicId.FlameHeart)) {
         const burnEffect = player.statusEffects.find(e => e.type === StatusEffectType.Burn);
         if (burnEffect) {
           burnEffect.damage = Math.floor(burnEffect.damage * 1.5);
         }
       }
       // Relic: PoisonGland - Poison damage * 1.3
-      if (hasRelic(player, 'poisonGland')) {
+      if (hasRelic(player, RelicId.PoisonGland)) {
         const poisonEffect = player.statusEffects.find(e => e.type === StatusEffectType.Poison);
         if (poisonEffect) {
           poisonEffect.damage = Math.floor(poisonEffect.damage * 1.3);
         }
       }
       // Relic: isRelicBurnImmune - skip Burn application on player
-      let burnImmune = isRelicBurnImmune(player);
+      const burnImmune = isRelicBurnImmune(player);
       player.statusEffects = player.statusEffects.filter(e => !(burnImmune && e.type === StatusEffectType.Burn));
 
       const result = processStatusEffects(player, true);
@@ -613,7 +612,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
 
     // Relic: Eternal Flame - heal 5% maxHp when standing on Lava/CooledLava
-    if (hasRelic(player, 'eternalFlame')) {
+    if (hasRelic(player, RelicId.EternalFlame)) {
       const tile = state.map[player.pos.y]?.[player.pos.x];
       if (tile && (tile.type === TileType.Lava || tile.type === TileType.CooledLava)) {
         const heal = Math.floor(player.maxHp * 0.05);
@@ -622,8 +621,14 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
     }
 
+    // Lava Tide mechanic (Lava Core only)
+    let lavaTideActive = state.lavaTideActive;
+    let lavaTideTurnsRemaining = state.lavaTideTurnsRemaining;
+    let lavaTideTiles = state.lavaTideTiles;
+    let currentMap = state.map;
+
     // Relic: Sixth Sense - auto-reveal adjacent SecretWalls
-    if (hasRelic(player, 'sixthSense')) {
+    if (hasRelic(player, RelicId.SixthSense)) {
       const dirs = [[0,-1],[0,1],[-1,0],[1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
       for (const [dx, dy] of dirs) {
         const nx = player.pos.x + dx;
@@ -638,7 +643,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
 
     // Relic: Time Hourglass - every 5 turns, grant extra action
-    if (hasRelic(player, 'timeHourglass')) {
+    if (hasRelic(player, RelicId.TimeHourglass)) {
       if (!player.extraTurnAccumulator) player.extraTurnAccumulator = 0;
       player.extraTurnAccumulator++;
       if (player.extraTurnAccumulator >= 5) {
@@ -657,11 +662,6 @@ export const useGameStore = create<GameStore>((set, get) => {
       return;
     }
 
-    // Lava Tide mechanic (Lava Core only)
-    let lavaTideActive = state.lavaTideActive;
-    let lavaTideTurnsRemaining = state.lavaTideTurnsRemaining;
-    let lavaTideTiles = state.lavaTideTiles;
-    let currentMap = state.map;
     if (getBiomeForFloor(state.currentFloor) === Biome.LavaCore) {
       if (state.turn > 0 && state.turn % 50 === 0 && !lavaTideActive) {
         // Tide rises: convert all CooledLava to Lava
@@ -700,7 +700,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
 
     // Steam Vent eruption (every 3 turns)
-    let activeSteamVents: number[] = [];
+    const activeSteamVents: number[] = [];
     if (state.turn > 0 && state.turn % 3 === 0) {
       for (let y = 0; y < currentMap.length; y++) {
         for (let x = 0; x < currentMap[0].length; x++) {
@@ -1564,10 +1564,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
 
     // Pick random event if there's an event tile
-    let currentEvent: GameEventDef | null = null;
+    let currentEvent: GameEventDef | ExtendedGameEventDef | null = null;
     if (dungeon.eventPos) {
       // Merge old and new events, weighted by biome affinity
-      const allEvents = [...GAME_EVENTS];
+      const allEvents: (GameEventDef | ExtendedGameEventDef)[] = [...GAME_EVENTS];
       if (EXTENDED_EVENT_DEFS && EXTENDED_EVENT_DEFS.length > 0) {
         allEvents.push(...EXTENDED_EVENT_DEFS);
       }
@@ -1577,8 +1577,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     const player = { ...state.player, pos: { ...dungeon.playerStart } };
 
     // Store themed rooms and steam vent turns from dungeon data
-    const themedRooms = (dungeon as any).themedRooms || [];
-    const steamVentTurns = (dungeon as any).steamVentTurns || [];
+    const themedRooms = (dungeon as { themedRooms?: GameState['themedRooms'] }).themedRooms || [];
+    const steamVentTurns = (dungeon as { steamVentTurns?: GameState['steamVentTurns'] }).steamVentTurns || [];
 
     // Reset _mirrorShieldUsed on floor entry
     player._mirrorShieldUsed = false;
@@ -1616,7 +1616,8 @@ export const useGameStore = create<GameStore>((set, get) => {
     // OldMap: reveal a themed room
     if (player.relics.includes(RelicId.OldMap) && themedRooms.length > 0) {
       const revealed = rng.nextInt(0, themedRooms.length - 1);
-      const config = THEMED_ROOM_CONFIGS[themedRooms[revealed].theme];
+      const theme = themedRooms[revealed].theme as RoomTheme;
+      const config = THEMED_ROOM_CONFIGS[theme];
       if (config) {
         addMessages([msg(`🗺️ 破旧地图显示了前方有：${config.nameZh}`, MessageCategory.Item, '#aaaaaa')]);
       }
@@ -1635,14 +1636,16 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Output themed room narrative if player starts on one
     const playerPos = { ...dungeon.playerStart };
     const currentThemedRooms = themedRooms || [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const themedRoomOnStart = currentThemedRooms.find((tr: any) =>
       playerPos.x >= tr.room.x && playerPos.x < tr.room.x + tr.room.w &&
       playerPos.y >= tr.room.y && playerPos.y < tr.room.y + tr.room.h
     );
     if (themedRoomOnStart) {
-      const config = THEMED_ROOM_CONFIGS[themedRoomOnStart.theme];
-      if (config && config.enterNarrative) {
-        addMessages([msg(config.enterNarrative, MessageCategory.Story, config.narrativeColor || '#ffcc44')]);
+      const theme = themedRoomOnStart.theme as RoomTheme;
+      const config = THEMED_ROOM_CONFIGS[theme];
+      if (config) {
+        addMessages([msg(`【${config.nameZh}】${config.narrativeText}`, MessageCategory.Story, '#ffcc44')]);
       }
     }
 
@@ -1844,6 +1847,9 @@ export const useGameStore = create<GameStore>((set, get) => {
           finalDamage = Math.floor(finalDamage * (1 + atkModifier));
         }
 
+        // Calculate new HP first
+        const newHp = enemy.hp - finalDamage;
+
         // Check for elemental chain reaction
         if (weaponElement !== Element.None && newHp > 0) {
           const targetElements = getEnemyElementDebuffs(enemy);
@@ -1907,10 +1913,10 @@ export const useGameStore = create<GameStore>((set, get) => {
           }
         }
 
-        const newHp = enemy.hp - finalDamage;
+        const updatedHp = enemy.hp - finalDamage;
         const enemies = state.enemies.map(e => {
           if (e.id !== enemy.id) return e;
-          const updated = { ...e, hp: newHp, statusEffects: [...enemy.statusEffects] };
+          const updated = { ...e, hp: updatedHp, statusEffects: [...enemy.statusEffects] };
           // Activate dormant enemies when hit
           if (e.specialAbility === 'dormant') {
             updated.fg = '#cc4444';
@@ -2464,16 +2470,10 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (tile.type === TileType.Forge) {
         // Check if any equipment can be enhanced
         const slots = Object.values(EquipmentSlot);
-        const slotNames: Record<EquipmentSlot, string> = {
-          [EquipmentSlot.Weapon]: '武器',
-          [EquipmentSlot.Armor]: '护甲',
-          [EquipmentSlot.Ring]: '戒指',
-          [EquipmentSlot.Amulet]: '护符',
-        };
         let canEnhance = false;
         for (const slot of slots) {
           const item = player.equipment[slot];
-          if (item && 'enhanceLevel' in item && (item as any).enhanceLevel < 3) {
+          if (item && 'enhanceLevel' in item && ((item as WeaponItem | ArmorItem | RingItem | AmuletItem).enhanceLevel ?? 0) < 3) {
             canEnhance = true;
             break;
           }
@@ -2503,6 +2503,9 @@ export const useGameStore = create<GameStore>((set, get) => {
             id: genId(),
             type: ItemType.Weapon,
             name: '普通铁剑',
+            char: '/',
+            fg: '#aaaaaa',
+            description: '一把普通的铁剑',
             rarity: Rarity.Common,
             damage: Math.floor(state.currentFloor * 1.5) + 3,
             element: Element.None,
@@ -2527,20 +2530,19 @@ export const useGameStore = create<GameStore>((set, get) => {
         flashScreen('#ff000033');
         AudioManager.playSFX('hit');
       }
-    }
 
-    // Check if enemies are on spike traps
-    const enemies = state.enemies.map(e => {
+      // Check if enemies are on spike traps
+      const enemies = state.enemies.map(e => {
       if (e.hp > 0) {
         const tile = state.map[e.pos.y]?.[e.pos.x];
         if (tile && tile.type === TileType.SpikeTrap) {
           const trapDmg = 8;
-          return { ...e, hp: e.hp - trapDmg };
+          return { ...e, hp: Math.max(0, e.hp - trapDmg) };
         }
       }
       return e;
     });
-    if (enemies.some(e => e.hp <= 0 && e.id !== state.enemies.find(en => en.id === e.id)?.hp)) {
+    if (enemies.some(e => e.hp <= 0)) {
       // Enemy died from spike trap
       const deadEnemies = enemies.filter(e => e.hp <= 0);
       for (const dead of deadEnemies) {
@@ -2567,7 +2569,6 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
       set({ player, enemies });
     }
-
 
       // Check for shop
       if (tile.type === TileType.Shop && state.shopItems.length > 0) {
@@ -3397,7 +3398,10 @@ export const useGameStore = create<GameStore>((set, get) => {
       const state = get();
       if (!state.player || !state.currentEvent) return;
 
-      const choice = state.currentEvent.choices[choiceIndex];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const event = state.currentEvent as any;
+      const choiceList = event.choices || event.options || [];
+      const choice = choiceList[choiceIndex];
       if (!choice) return;
 
       const player = { ...state.player };
@@ -4030,6 +4034,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         return;
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const enhanceLevel = (item as any).enhanceLevel || 0;
       if (enhanceLevel >= 3) {
         addMessages([msg('该装备已达到最大强化等级', MessageCategory.System, '#ff4444')]);
@@ -4056,11 +4061,13 @@ export const useGameStore = create<GameStore>((set, get) => {
       player.gold -= finalCost;
 
       if (success) {
-        const enhanced = { ...item, enhanceLevel: enhanceLevel + 1 } as any;
+        const newLevel = (enhanceLevel + 1) as 0 | 1 | 2 | 3;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const enhanced = { ...item, enhanceLevel: newLevel } as any;
         if (enhanced.type === ItemType.Weapon) {
-          enhanced.damage = Math.floor(enhanced.damage * ENHANCE_ATK_MULT);
+          enhanced.damage = Math.floor(enhanced.damage * ENHANCE_ATK_MULT[enhanceLevel]);
         } else if (enhanced.type === ItemType.Armor) {
-          enhanced.defense = Math.floor(enhanced.defense * ENHANCE_DEF_MULT);
+          enhanced.defense = Math.floor(enhanced.defense * ENHANCE_DEF_MULT[enhanceLevel]);
         }
 
         // VoidForge success: 10% chance to curse item

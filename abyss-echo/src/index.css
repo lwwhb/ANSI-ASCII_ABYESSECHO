@@ -205,3 +205,117 @@ input:focus {
   font-size: 13px;
 }
 
+/* Relic Bar */
+.relic-bar {
+  position: fixed;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.7);
+  border-radius: 6px;
+  border: 1px solid #333;
+  z-index: 50;
+}
+
+.relic-item {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  border-radius: 4px;
+  background: #1a1a2e;
+  border: 1px solid #444;
+  cursor: default;
+  position: relative;
+}
+
+.relic-item:hover {
+  border-color: #ffd700;
+  background: #222244;
+}
+
+/* Enhancement Modal */
+.enhance-modal {
+  max-width: 480px;
+}
+
+.enhance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.enhance-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #ccc;
+  font-size: 13px;
+  font-family: "Courier New", monospace;
+}
+
+.enhance-item:hover {
+  border-color: #ff8800;
+  background: #222244;
+}
+
+.enhance-item.enhance-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.enhance-item.enhance-max {
+  opacity: 0.7;
+  cursor: default;
+  border-color: #aa44ff;
+}
+
+.enhance-cost {
+  color: #ffcc44;
+}
+
+.enhance-close {
+  margin-top: 12px;
+  padding: 8px 20px;
+  background: #1a1a2e;
+  border: 1px solid #444;
+  color: #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: "Courier New", monospace;
+  font-size: 13px;
+}
+
+.enhance-close:hover {
+  border-color: #888;
+  background: #222244;
+}
+
+/* Rare Event Option */
+.event-option-rare {
+  border-color: #aa44ff !important;
+  background: #1a1030 !important;
+}
+
+.event-option-rare::before {
+  content: '🔮 ';
+}
+
+.event-option-locked {
+  opacity: 0.4;
+  cursor: not-allowed !important;
+}
+
+

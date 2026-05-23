@@ -4,6 +4,7 @@
 
 import { Element, TileType, ChainReactionDef, Position, StatusEffectType, Enemy, Player, Tile } from '../types';
 import { CHAIN_REACTIONS, TERRAIN_ELEMENTS, isSteamVentActive } from '../constants/elementalChain';
+import { SeededRandom } from '../utils/random';
 
 export interface ChainResult {
   damage: number;
@@ -18,16 +19,16 @@ export function getTerrainElementsAt(
   map: Tile[][],
   x: number,
   y: number,
-  currentTurn: number,
-  steamVentTurns: { x: number; y: number; spawnTurn: number }[],
+  _currentTurn: number,
+  _steamVentTurns: { x: number; y: number; spawnTurn: number }[],
 ): Element[] {
   if (y < 0 || y >= map.length || x < 0 || x >= map[0].length) return [];
   const tileType = map[y][x].type;
 
   // Special case: SteamVent only provides elements when active
   if (tileType === TileType.SteamVent) {
-    const vent = steamVentTurns.find(v => v.x === x && v.y === y);
-    if (vent && isSteamVentActive(currentTurn, vent.spawnTurn)) {
+    const vent = _steamVentTurns.find((v: { x: number; y: number; spawnTurn: number }) => v.x === x && v.y === y);
+    if (vent && isSteamVentActive(_currentTurn, vent.spawnTurn)) {
       return TERRAIN_ELEMENTS[TileType.SteamVent] ?? [];
     }
     return [];
@@ -53,30 +54,23 @@ export function checkChainReaction(
   attackElement: Element,
   targetElements: Element[],
   terrainType: TileType,
-  currentTurn: number,
-  steamVentTurns: { x: number; y: number; spawnTurn: number }[],
+  _currentTurn: number,
+  _steamVentTurns: { x: number; y: number; spawnTurn: number }[],
 ): ChainReactionDef | null {
+  // This simplified version can't properly check terrain elements without full map access
+  // Use checkChainReactionWithMap instead for proper terrain element detection
   if (attackElement === Element.None) return null;
 
   for (const reaction of CHAIN_REACTIONS) {
-    // Attack element must match first element of reaction
     if (reaction.elements[0] !== attackElement) continue;
 
-    // Check if second element comes from target debuffs OR terrain
     const secondElement = reaction.elements[1];
 
     // From target debuffs
     if (targetElements.includes(secondElement)) return reaction;
 
-    // From terrain
+    // From terrain (basic check, not including terrain elements like SteamVent)
     if (reaction.requiresTerrain && reaction.requiresTerrain.includes(terrainType)) return reaction;
-
-    // From terrain elements (more general check)
-    const terrainElements = getTerrainElementsAt(
-      { 0: { 0: { type: terrainType } as Tile } } as Tile[][],
-      0, 0, currentTurn, steamVentTurns,
-    );
-    // Actually we should use the full map — simplified for now
   }
 
   return null;
@@ -120,7 +114,7 @@ export function executeChainReaction(
   map: Tile[][],
   enemies: Enemy[],
   player: Player,
-  rng: any, // SeededRandom
+  rng: SeededRandom,
 ): ChainResult {
   const result: ChainResult = {
     damage: 0,

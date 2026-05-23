@@ -3,7 +3,7 @@
 // ============================================================
 
 import { RelicId, RelicRarity, Element, Player, StatusEffectType } from '../types';
-import { RELIC_DEFS, RELICS_BY_RARITY, ELEMENT_RELICS } from '../constants/relics';
+import { RELICS_BY_RARITY, ELEMENT_RELICS } from '../constants/relics';
 import { SeededRandom } from '../utils/random';
 
 // Check if player has a specific relic
@@ -97,16 +97,15 @@ export function rollRandomRelic(
 ): RelicId {
   const totalWeight = rarityWeights.common + rarityWeights.rare + rarityWeights.epic;
   const roll = rng.next() * totalWeight;
-  let rarity: RelicRarity;
+  let rarity: RelicRarity = RelicRarity.Common;
   if (roll < rarityWeights.epic) rarity = RelicRarity.Epic;
   else if (roll < rarityWeights.epic + rarityWeights.rare) rarity = RelicRarity.Rare;
-  else rarity = RelicRarity.Common;
 
   let candidates = RELICS_BY_RARITY[rarity].filter(id => !player.relics.includes(id));
   if (candidates.length === 0) {
     for (const altRarity of [RelicRarity.Common, RelicRarity.Rare, RelicRarity.Epic]) {
       candidates = RELICS_BY_RARITY[altRarity].filter(id => !player.relics.includes(id));
-      if (candidates.length > 0) { rarity = altRarity; break; }
+      if (candidates.length > 0) break;
     }
   }
   if (candidates.length === 0) candidates = RELICS_BY_RARITY[RelicRarity.Common];

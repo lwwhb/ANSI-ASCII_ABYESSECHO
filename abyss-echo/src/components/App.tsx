@@ -15,6 +15,8 @@ import ShopModal from './ShopModal';
 import EventModal from './EventModal';
 import BossBlessingModal from './BossBlessingModal';
 import SkillBar from './SkillBar';
+import RelicBar from './RelicBar';
+import EnhanceModal from './EnhanceModal';
 
 const GameScreen: React.FC = () => {
   const phase = useGameStore(s => s.phase);
@@ -27,6 +29,8 @@ const GameScreen: React.FC = () => {
   const equipItem = useGameStore(s => s.equipItem);
   const dropItem = useGameStore(s => s.dropItem);
   const applySkill = useGameStore(s => s.useSkill);
+  const pendingForge = useGameStore(s => s.pendingForge);
+  const setPhase = useGameStore(s => s.setPhase);
   const [showHelp, setShowHelp] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [selectedInvIndex, setSelectedInvIndex] = useState(-1);
@@ -49,6 +53,10 @@ const GameScreen: React.FC = () => {
       return;
     }
     if (phase === GamePhase.Event) return;
+    if (pendingForge) {
+      if (e.key === 'Escape') setPhase(GamePhase.Playing);
+      return;
+    }
 
     if (phase === GamePhase.Inventory) {
       const player = useGameStore.getState().player;
@@ -141,7 +149,7 @@ const GameScreen: React.FC = () => {
         break;
       }
     }
-  }, [phase, movePlayer, waitTurn, pickupItem, descendStairs, toggleInventory, applyItem, equipItem, dropItem, applySkill, showHelp, showManual, selectedInvIndex]);
+  }, [phase, movePlayer, waitTurn, pickupItem, descendStairs, toggleInventory, applyItem, equipItem, dropItem, applySkill, showHelp, showManual, selectedInvIndex, pendingForge, setPhase]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -243,12 +251,14 @@ const GameScreen: React.FC = () => {
       </div>
       <SkillBar />
       <MessageLog />
+      <RelicBar />
       {phase === GamePhase.Inventory && <InventoryModal selectedIndex={selectedInvIndex} onSelect={setSelectedInvIndex} />}
       {phase === GamePhase.LevelUp && <LevelUpModal />}
       {phase === GamePhase.TalentSelection && <TalentModal />}
       {phase === GamePhase.Shop && <ShopModal />}
       {phase === GamePhase.Event && <EventModal />}
       {bossBlessingPending && <BossBlessingModal />}
+      {pendingForge && <EnhanceModal />}
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       {showManual && <ManualOverlay onClose={() => setShowManual(false)} />}
       {showSuspendConfirm && (

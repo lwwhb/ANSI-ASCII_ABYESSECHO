@@ -301,8 +301,8 @@ export function getItemName(item: Item): string {
   }
   let name = item.name;
   if (item.cursed && item.identified) name += ' [诅咒]';
-  if ('enhanceLevel' in item && (item as any).enhanceLevel > 0) {
-    name += `+${(item as any).enhanceLevel}`;
+  if ('enhanceLevel' in item && (item as WeaponItem | ArmorItem | RingItem | AmuletItem).enhanceLevel && (item as WeaponItem | ArmorItem | RingItem | AmuletItem).enhanceLevel! > 0) {
+    name += `+${(item as WeaponItem | ArmorItem | RingItem | AmuletItem).enhanceLevel}`;
   }
   return name;
 }
