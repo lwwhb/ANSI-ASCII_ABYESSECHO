@@ -654,8 +654,45 @@ export const useGameStore = create<GameStore>((set, get) => {
             if (enemies[i].isBoss) player.bossKillCount++;
             messages.push(msg(`${enemies[i].name}被效果杀死了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
             AudioManager.playSFX('coin');
+
+            // Elite Explosive: Death blast dealing ATK×1.5 in 2-tile radius
+            if (enemies[i].isElite && enemies[i].eliteAffix === EliteAffix.Explosive) {
+              const blastDmg = Math.floor(enemies[i].attack * 1.5);
+              const blastRadius = 2;
+              // Damage player if in range
+              const distToPlayer = Math.abs(enemies[i].pos.x - player.pos.x) + Math.abs(enemies[i].pos.y - player.pos.y);
+              if (distToPlayer <= blastRadius) {
+                player.hp = Math.max(0, player.hp - blastDmg);
+                messages.push(msg(`${enemies[i].name}爆裂！你受到${blastDmg}点伤害！`, MessageCategory.Combat, '#ff4444'));
+                flashScreen('#ff000033');
+              }
+              // Damage other enemies in range
+              for (const other of enemies) {
+                if (other.id !== enemies[i].id && other.hp > 0) {
+                  const dist = Math.abs(enemies[i].pos.x - other.pos.x) + Math.abs(enemies[i].pos.y - other.pos.y);
+                  if (dist <= blastRadius) {
+                    other.hp = Math.max(0, other.hp - blastDmg);
+                  }
+                }
+              }
+              if (player.hp <= 0) {
+                handlePlayerDeath(player, enemies, messages, `被${enemies[i].name}爆裂`);
+                return;
+              }
+            }
             continue;
           }
+        }
+
+        // Elite Frenzy: +0.5 ATK per turn
+        if (enemies[i].isElite && enemies[i].eliteAffix === EliteAffix.Frenzy && enemies[i].hp > 0) {
+          enemies[i].frenzyBonus = (enemies[i].frenzyBonus || 0) + 0.5;
+        }
+
+        // Elite Regen: Heal 5% max HP per turn
+        if (enemies[i].isElite && enemies[i].eliteAffix === EliteAffix.Regen && enemies[i].hp > 0) {
+          const healAmt = Math.max(1, Math.floor(enemies[i].maxHp * 0.05));
+          enemies[i].hp = Math.min(enemies[i].maxHp, enemies[i].hp + healAmt);
         }
 
         // Fast enemies get multiple actions
@@ -773,7 +810,13 @@ export const useGameStore = create<GameStore>((set, get) => {
               if (hasMinions) packLeaderBonus = 3;
             }
 
-            const rawDamage = enemy.attack + swarmBonus + berserkAtkBonus + packLeaderBonus + variance;
+            // Add frenzy bonus to attack
+            let atkBonus = 0;
+            if (enemies[i].isElite && enemies[i].eliteAffix === EliteAffix.Frenzy) {
+              atkBonus = enemies[i].frenzyBonus || 0;
+            }
+
+            const rawDamage = enemy.attack + swarmBonus + berserkAtkBonus + packLeaderBonus + variance + atkBonus;
 
             // 装备特效：闪避回蓝 — 闪避判定在受伤前
             const evasion = (player.equipment[EquipmentSlot.Armor] as ArmorItem | null)?.evasion ?? 0;
@@ -793,6 +836,12 @@ export const useGameStore = create<GameStore>((set, get) => {
               messages.push(msg(`${enemy.name}攻击了你，造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
               AudioManager.playSFX('hit');
               flashScreen('#ff000033');
+
+              // Elite Vampiric: Heal 30% of damage dealt
+              if (enemies[i].isElite && enemies[i].eliteAffix === EliteAffix.Vampiric) {
+                const healAmt = Math.floor(damage * 0.3);
+                enemies[i] = { ...enemies[i], hp: Math.min(enemies[i].maxHp, enemies[i].hp + healAmt) };
+              }
 
               // 装备特效：反伤 — 反弹10%近战伤害
               if (hasEquipmentEffect(player, EquipmentEffect.Thorns)) {
@@ -1531,7 +1580,29 @@ export const useGameStore = create<GameStore>((set, get) => {
           addMessages([msg('淬毒生效！敌人中毒了！(☠2伤害/3回合)', MessageCategory.Combat, '#44cc44')]);
         }
 
-        const newHp = enemy.hp - result.damage;
+        // Elite Phantom: 30% dodge chance
+        let finalDamage = result.damage;
+        if (enemy.isElite && enemy.eliteAffix === EliteAffix.Phantom) {
+          if (rng.next() < 0.3) {
+            finalDamage = 0;
+            addMessages([msg(`${enemy.name}闪避了攻击！`, MessageCategory.Combat, '#cccccc')]);
+            // Skip the rest of damage application
+            const enemies = state.enemies.map(e => {
+              if (e.id !== enemy.id) return e;
+              return { ...e, statusEffects: [...enemy.statusEffects] };
+            });
+            set({ player, enemies });
+            processTurn();
+            return;
+          }
+        }
+
+        // Elite Armored: -30% physical damage
+        if (enemy.isElite && enemy.eliteAffix === EliteAffix.Armored) {
+          finalDamage = Math.floor(finalDamage * 0.7);
+        }
+
+        const newHp = enemy.hp - finalDamage;
         const enemies = state.enemies.map(e => {
           if (e.id !== enemy.id) return e;
           const updated = { ...e, hp: newHp, statusEffects: [...enemy.statusEffects] };
@@ -1553,10 +1624,10 @@ export const useGameStore = create<GameStore>((set, get) => {
           dmgLabel = `${result.damage}`;
         }
         if (result.critical) {
-          messages.push(msg(`暴击！你攻击了${enemy.name}，造成 ${dmgLabel} 点伤害！`, MessageCategory.Combat, '#ffcc44'));
+          messages.push(msg(`暴击！你攻击了${enemy.name}，造成 ${finalDamage > 0 ? dmgLabel : '0'} 点伤害！`, MessageCategory.Combat, '#ffcc44'));
           AudioManager.playSFX('critical');
         } else {
-          messages.push(msg(`你攻击了${enemy.name}，造成 ${dmgLabel} 点伤害`, MessageCategory.Combat, '#ff8844'));
+          messages.push(msg(`你攻击了${enemy.name}，造成 ${finalDamage > 0 ? dmgLabel : '0'} 点伤害`, MessageCategory.Combat, '#ff8844'));
           AudioManager.playSFX('attack');
         }
 
@@ -1567,7 +1638,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
         // Crystal Guard reflect: 20% chance to reflect 50% melee damage back
         if (enemy.specialAbility === 'reflect' && rng.chance(0.2)) {
-          const reflectDmg = Math.floor(result.damage * 0.5);
+          const reflectDmg = Math.floor(finalDamage * 0.5);
           player.hp -= reflectDmg;
           messages.push(msg(`${enemy.name}反射了 ${reflectDmg} 点伤害！`, MessageCategory.Combat, '#88ccff'));
           flashScreen('#88ccff33');
@@ -1575,13 +1646,13 @@ export const useGameStore = create<GameStore>((set, get) => {
 
         // 装备特效：吸血 — 回复伤害的20%HP
         if (hasEquipmentEffect(player, EquipmentEffect.LifeSteal)) {
-          const heal = Math.max(1, Math.floor(result.damage * 0.2));
+          const heal = Math.max(1, Math.floor(finalDamage * 0.2));
           player.hp = Math.min(player.maxHp, player.hp + heal);
           messages.push(msg(`吸血回复 ${heal} HP`, MessageCategory.Combat, '#44cc44'));
         }
         // 装备特效：吸魔 — 回复伤害的15%MP
         if (hasEquipmentEffect(player, EquipmentEffect.ManaSteal)) {
-          const mpGain = Math.max(1, Math.floor(result.damage * 0.15));
+          const mpGain = Math.max(1, Math.floor(finalDamage * 0.15));
           player.mp = Math.min(player.maxMp, player.mp + mpGain);
           messages.push(msg(`吸魔回复 ${mpGain} MP`, MessageCategory.Combat, '#4488ff'));
         }
@@ -1634,6 +1705,37 @@ export const useGameStore = create<GameStore>((set, get) => {
           player.gold += goldDrop;
           messages.push(msg(`${enemy.name}被击败了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
           AudioManager.playSFX('coin');
+
+          // Elite Explosive: Death blast dealing ATK×1.5 in 2-tile radius
+          if (enemy.isElite && enemy.eliteAffix === EliteAffix.Explosive) {
+            const blastDmg = Math.floor(enemy.attack * 1.5);
+            const blastRadius = 2;
+            // Damage player if in range
+            const distToPlayer = Math.abs(enemy.pos.x - player.pos.x) + Math.abs(enemy.pos.y - player.pos.y);
+            if (distToPlayer <= blastRadius) {
+              player.hp = Math.max(0, player.hp - blastDmg);
+              messages.push(msg(`${enemy.name}爆裂！你受到${blastDmg}点伤害！`, MessageCategory.Combat, '#ff4444'));
+              flashScreen('#ff000033');
+            }
+            // Damage other enemies in range
+            const enemies = state.enemies.map(e => ({ ...e }));
+            for (const other of enemies) {
+              if (other.id !== enemy.id && other.hp > 0) {
+                const dist = Math.abs(enemy.pos.x - other.pos.x) + Math.abs(enemy.pos.y - other.pos.y);
+                if (dist <= blastRadius) {
+                  const otherIdx = enemies.findIndex(e => e.id === other.id);
+                  if (otherIdx >= 0) {
+                    enemies[otherIdx] = { ...other, hp: Math.max(0, other.hp - blastDmg) };
+                  }
+                }
+              }
+            }
+            set({ player, enemies });
+            if (player.hp <= 0) {
+              handlePlayerDeath(player, enemies, messages, `被${enemy.name}爆裂`);
+              return;
+            }
+          }
 
           // 装备特效：击杀重置 — 击杀后重置所有技能CD
           if (hasEquipmentEffect(player, EquipmentEffect.KillReset)) {
