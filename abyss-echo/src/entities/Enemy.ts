@@ -1,5 +1,5 @@
-import { Enemy, Position } from '../types';
-import { ENEMY_DEFS, BOSS_DEFS } from '../constants';
+import { Enemy, Position, EliteAffix } from '../types';
+import { ENEMY_DEFS, BOSS_DEFS, ELITE_HP_MULT, ELITE_ATK_MULT, ELITE_DEF_BONUS, ELITE_EXP_MULT, ELITE_GOLD_MULT } from '../constants';
 import { genId } from './Player';
 
 export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor: number): Enemy | null {
@@ -35,6 +35,9 @@ export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor
       goldDrop: Math.floor((bossDef.goldDrop ?? 50) * scale),
       bossPhase: 1,
       isElite: false,
+      eliteAffix: undefined,
+      frenzyBonus: 0,
+      _skipAttack: false,
     };
   }
 
@@ -69,6 +72,32 @@ export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor
     hidden: def.behavior === 'ambush',
     bossPhase: 1,
     isElite: false,
+    eliteAffix: undefined,
+    frenzyBonus: 0,
+    _skipAttack: false,
+  };
+}
+
+export function createEliteEnemy(defId: string, pos: Position, floor: number, affix: EliteAffix): Enemy | null {
+  const def = ENEMY_DEFS.find(d => d.id === defId);
+  if (!def) return null;
+
+  const baseEnemy = createEnemy(defId, pos, false, floor);
+  if (!baseEnemy) return null;
+
+  return {
+    ...baseEnemy,
+    name: `精英${baseEnemy.name}`,
+    fg: '#ffd700',
+    hp: Math.floor(baseEnemy.maxHp * ELITE_HP_MULT),
+    maxHp: Math.floor(baseEnemy.maxHp * ELITE_HP_MULT),
+    attack: Math.floor(baseEnemy.attack * ELITE_ATK_MULT),
+    defense: baseEnemy.defense + ELITE_DEF_BONUS,
+    exp: Math.floor(baseEnemy.exp * ELITE_EXP_MULT),
+    goldDrop: Math.floor(baseEnemy.goldDrop * ELITE_GOLD_MULT),
+    isElite: true,
+    eliteAffix: affix,
+    frenzyBonus: 0,
   };
 }
 
