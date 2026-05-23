@@ -32,6 +32,21 @@ export enum TileType {
   Portal = 'portal',
   Torch = 'torch',
   Sarcophagus = 'sarcophagus',
+  Throne = 'throne',
+  Barricade = 'barricade',
+  WebFloor = 'webFloor',
+  SpiderEgg = 'spiderEgg',
+  Altar = 'altar',
+  LavaPool = 'lavaPool',
+  VoidRift = 'voidRift',
+  VoidPillar = 'voidPillar',
+  CorruptionPool = 'corruptionPool',
+  HealCrystal = 'healCrystal',
+  EliteDoor = 'eliteDoor',
+  Fountain = 'fountain',
+  Inscription = 'inscription',
+  SecretWall = 'secretWall',
+  Monument = 'monument',
 }
 
 export interface Tile {
@@ -79,6 +94,23 @@ export enum Rarity {
   Rare = 'rare',
   Epic = 'epic',
   Legendary = 'legendary',
+}
+
+// --- Equipment Special Effects ---
+export enum EquipmentEffect {
+  // Weapon effects
+  LifeSteal = 'lifeSteal',         // 吸血：近战回复伤害的20%HP
+  ManaSteal = 'manaSteal',         // 吸魔：近战回复伤害的15%MP
+  CritBonus = 'critBonus',         // 暴击率+10%
+  KillReset = 'killReset',         // 击杀重置技能CD
+  StatusProc = 'statusProc',       // 概率触发元素异常
+  // Armor effects
+  Thorns = 'thorns',               // 反伤：反弹10%近战伤害
+  DodgeMana = 'dodgeMana',         // 闪避回MP：闪避时回复3MP
+  DamageShield = 'damageShield',   // 受伤10%概率获得5防御5回合
+  // Ring/Amulet effects
+  CooldownReduce = 'cooldownReduce', // 技能CD-1（最低1）
+  ElementResist = 'elementResist',   // 元素抗性：元素伤害-30%
 }
 
 // --- Elemental Types ---
@@ -148,6 +180,7 @@ export interface WeaponItem extends ItemBase {
   damage: number;
   element: Element;
   bonusStats?: Partial<Stats>;
+  specialEffect?: EquipmentEffect;
 }
 
 export interface ArmorItem extends ItemBase {
@@ -155,18 +188,19 @@ export interface ArmorItem extends ItemBase {
   defense: number;
   evasion: number;
   bonusStats?: Partial<Stats>;
+  specialEffect?: EquipmentEffect;
 }
 
 export interface RingItem extends ItemBase {
   type: ItemType.Ring;
   bonusStats: Partial<Stats>;
-  specialEffect?: string;
+  specialEffect?: EquipmentEffect;
 }
 
 export interface AmuletItem extends ItemBase {
   type: ItemType.Amulet;
   bonusStats: Partial<Stats>;
-  specialEffect?: string;
+  specialEffect?: EquipmentEffect;
 }
 
 export interface PotionItem extends ItemBase {
@@ -278,6 +312,36 @@ export enum EnemyBehavior {
   Patrolling = 'patrolling',
   Stationary = 'stationary',
   Boss = 'boss',
+  Swarm = 'swarm',
+  CallAlly = 'callAlly',
+  Revive = 'revive',
+  Berserk = 'berserk',
+  Split = 'split',
+  Ambush = 'ambush',
+}
+
+export enum EliteAffix {
+  Armored = 'armored',
+  Frenzy = 'frenzy',
+  Regen = 'regen',
+  Vampiric = 'vampiric',
+  Explosive = 'explosive',
+  Phantom = 'phantom',
+}
+
+export enum BossBlessing {
+  Headhunter = 'headhunter',
+  TribalHeart = 'tribalHeart',
+  WebWeaver = 'webWeaver',
+  VenomBlood = 'venomBlood',
+  UndyingWill = 'undyingWill',
+  DeathPact = 'deathPact',
+  InfernalSoul = 'infernalSoul',
+  DemonPower = 'demonPower',
+  VoidWalk = 'voidWalk',
+  AbyssEye = 'abyssEye',
+  EchoBody = 'echoBody',
+  FinalPact = 'finalPact',
 }
 
 export interface EnemyDef {
@@ -319,6 +383,14 @@ export interface Enemy extends EntityBase {
   alertRadius: number;
   isBoss: boolean;
   goldDrop: number;
+  hidden?: boolean;
+  hasCalledAlly?: boolean;
+  reviveTimer?: number;
+  bossPhase: 1 | 2 | 3;
+  isElite: boolean;
+  eliteAffix?: EliteAffix;
+  frenzyBonus?: number;
+  _skipAttack?: boolean;
 }
 
 // --- Player ---
@@ -347,6 +419,9 @@ export interface Player extends EntityBase {
   skillCooldowns: number[];
   talents: string[];
   gold: number;
+  bossBlessings: BossBlessing[];
+  finalPactUsed: boolean;
+  inscriptionCount: number;
 }
 
 // --- Messages ---
@@ -421,6 +496,10 @@ export interface GameState {
   pendingIdentify: boolean;
   pendingSacrifice: boolean;
   pendingAllocations: Partial<Stats>;
+  bossBlessingPending: boolean;
+  lastBossDefId: string | null;
+  secretWalls: Position[];
+  floorDescriptionShown: boolean;
 }
 
 export interface HighScore {
@@ -432,6 +511,11 @@ export interface HighScore {
   turns: number;
   date: string;
   isDaily?: boolean;
+}
+
+export interface BossArenaData {
+  bossDefId: string;
+  objects: { type: TileType; x: number; y: number }[];
 }
 
 // --- Direction ---

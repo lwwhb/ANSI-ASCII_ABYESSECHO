@@ -1,4 +1,4 @@
-import { TileType, Biome, CharacterClass, Rarity, Element, EnemyBehavior, EnemyDef, PotionEffect, ScrollEffect, SkillDef, TalentDef, AchievementDef, GameEventDef } from '../types';
+import { TileType, Biome, CharacterClass, Rarity, Element, EnemyBehavior, EnemyDef, PotionEffect, ScrollEffect, SkillDef, TalentDef, AchievementDef, GameEventDef, EquipmentEffect } from '../types';
 
 // ============================================================
 // Map Dimensions
@@ -43,7 +43,7 @@ export const CLASS_DEFS: Record<CharacterClass, {
     nameZh: '法师',
     description: '精通奥术的施法者。高魔力与法术伤害，但身躯脆弱。',
     baseStats: { str: 6, dex: 8, int: 14, vit: 8 },
-    baseHp: 15,
+    baseHp: 25,
     baseMp: 25,
     char: '@',
     fg: '#66aaff',
@@ -171,38 +171,38 @@ export const RARITY_COLORS: Record<Rarity, string> = {
 // ============================================================
 export const ENEMY_DEFS: EnemyDef[] = [
   // Floor 1-5
-  { id: 'slime',     name: '史莱姆',   char: '§', fg: '#44cc44', hp: 10, attack: 3,  defense: 0,  exp: 5,  behavior: EnemyBehavior.Aggressive,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 1,  speed: 1, dropChance: 0.2, alertRadius: 5, goldDrop: 3 },
-  { id: 'rat',       name: '巨鼠',     char: 'Я', fg: '#cc9944', hp: 8,  attack: 4,  defense: 0,  exp: 4,  behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 1,  speed: 2, dropChance: 0.1, alertRadius: 6, goldDrop: 2 },
+  { id: 'slime',     name: '史莱姆',   char: '§', fg: '#44cc44', hp: 10, attack: 3,  defense: 0,  exp: 5,  behavior: EnemyBehavior.Swarm,      element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 1,  speed: 1, dropChance: 0.2, alertRadius: 5, goldDrop: 3 },
+  { id: 'rat',       name: '巨鼠',     char: 'Я', fg: '#cc9944', hp: 8,  attack: 4,  defense: 0,  exp: 4,  behavior: EnemyBehavior.Swarm,      element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 1,  speed: 2, dropChance: 0.1, alertRadius: 6, goldDrop: 2 },
   { id: 'bat',       name: '蝙蝠',     char: 'ψ', fg: '#aa88cc', hp: 7,  attack: 3,  defense: 1,  exp: 4,  behavior: EnemyBehavior.Cowardly,    element: Element.None,       weakness: Element.Lightning,  resistance: Element.None,       minFloor: 1,  speed: 2, dropChance: 0.1, alertRadius: 7, goldDrop: 2 },
-  { id: 'goblin',    name: '哥布林',   char: 'ǥ', fg: '#44aa44', hp: 15, attack: 5,  defense: 2,  exp: 8,  behavior: EnemyBehavior.Patrolling,   element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 2,  speed: 1, dropChance: 0.3, alertRadius: 6, goldDrop: 5 },
+  { id: 'goblin',    name: '哥布林',   char: 'ǥ', fg: '#44aa44', hp: 15, attack: 5,  defense: 2,  exp: 8,  behavior: EnemyBehavior.CallAlly,    element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 2,  speed: 1, dropChance: 0.3, alertRadius: 6, goldDrop: 5 },
   { id: 'caveScorpion', name: '洞穴蝎', char: 'π', fg: '#88aa44', hp: 12, attack: 4,  defense: 2,  exp: 6,  behavior: EnemyBehavior.Aggressive,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 1,  speed: 1, dropChance: 0.25, alertRadius: 5, specialAbility: 'poisonSting', goldDrop: 4 },
   { id: 'gargoyle',     name: '石像鬼', char: 'Γ', fg: '#888888', hp: 20, attack: 3,  defense: 5,  exp: 10, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 2,  speed: 1, dropChance: 0.35, alertRadius: 3, specialAbility: 'dormant', goldDrop: 8 },
   // Floor 6-10
-  { id: 'skeleton',  name: '骷髅',     char: 'S', fg: '#ccccaa', hp: 28, attack: 7,  defense: 5,  exp: 15, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 5,  speed: 1, dropChance: 0.3, alertRadius: 6, goldDrop: 8 },
+  { id: 'skeleton',  name: '骷髅',     char: 'S', fg: '#ccccaa', hp: 28, attack: 7,  defense: 5,  exp: 15, behavior: EnemyBehavior.Revive,      element: Element.None,       weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 5,  speed: 1, dropChance: 0.3, alertRadius: 6, goldDrop: 8 },
   { id: 'spider',    name: '巨蛛',     char: '╳', fg: '#664422', hp: 22, attack: 8,  defense: 4,  exp: 12, behavior: EnemyBehavior.Stationary,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 5,  speed: 1, dropChance: 0.25, alertRadius: 4, specialAbility: 'web', goldDrop: 6 },
   { id: 'orc',       name: '兽人',     char: 'Ω', fg: '#66aa44', hp: 35, attack: 10, defense: 6,  exp: 20, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 6,  speed: 1, dropChance: 0.35, alertRadius: 5, goldDrop: 12 },
-  { id: 'shadow',    name: '暗影',     char: 'ω', fg: '#4444aa', hp: 22, attack: 9,  defense: 4,  exp: 18, behavior: EnemyBehavior.Aggressive,  element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 7, speed: 2, dropChance: 0.2, alertRadius: 8, goldDrop: 10 },
+  { id: 'shadow',    name: '暗影',     char: 'ω', fg: '#4444aa', hp: 22, attack: 9,  defense: 4,  exp: 18, behavior: EnemyBehavior.Ambush,      element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 7, speed: 2, dropChance: 0.2, alertRadius: 8, goldDrop: 10 },
   { id: 'crystalGuard', name: '水晶守卫', char: 'C', fg: '#88ccff', hp: 32, attack: 8,  defense: 7,  exp: 16, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Lightning,  resistance: Element.None,       minFloor: 6, speed: 1, dropChance: 0.3, alertRadius: 6, specialAbility: 'reflect', goldDrop: 12 },
   { id: 'glowJelly',    name: '荧光水母', char: 'µ', fg: '#aaffcc', hp: 16, attack: 6,  defense: 2,  exp: 10, behavior: EnemyBehavior.Aggressive,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 6, speed: 1, dropChance: 0.2, alertRadius: 4, specialAbility: 'glare', goldDrop: 5 },
   // Floor 11-15
   { id: 'darkKnight',name: '暗黑骑士', char: 'Ķ', fg: '#4400aa', hp: 50, attack: 14, defense: 10, exp: 35, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Lightning,  resistance: Element.None,       minFloor: 10, speed: 1, dropChance: 0.4, alertRadius: 6, goldDrop: 20 },
-  { id: 'wraith',    name: '怨灵',     char: 'R', fg: '#8844cc', hp: 32, attack: 12, defense: 5,  exp: 28, behavior: EnemyBehavior.Aggressive,  element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 10, speed: 1, dropChance: 0.3, alertRadius: 8, specialAbility: 'drain', goldDrop: 15 },
-  { id: 'troll',     name: '巨魔',     char: 'T', fg: '#448844', hp: 60, attack: 11, defense: 9,  exp: 30, behavior: EnemyBehavior.Patrolling,   element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.4, alertRadius: 5, specialAbility: 'regenerate', goldDrop: 18 },
+  { id: 'wraith',    name: '怨灵',     char: 'R', fg: '#8844cc', hp: 32, attack: 12, defense: 5,  exp: 28, behavior: EnemyBehavior.Revive,      element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 10, speed: 1, dropChance: 0.3, alertRadius: 8, specialAbility: 'drain', goldDrop: 15 },
+  { id: 'troll',     name: '巨魔',     char: 'T', fg: '#448844', hp: 60, attack: 11, defense: 9,  exp: 30, behavior: EnemyBehavior.Ambush,      element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.4, alertRadius: 5, specialAbility: 'regenerate', goldDrop: 18 },
   { id: 'mimic',     name: '宝箱怪',   char: 'M', fg: '#ccaa44', hp: 42, attack: 13, defense: 7,  exp: 32, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.5, alertRadius: 2, specialAbility: 'surprise', goldDrop: 25 },
-  { id: 'tombGuard', name: '守墓人', char: 'Š', fg: '#887766', hp: 55, attack: 10, defense: 13, exp: 35, behavior: EnemyBehavior.Patrolling,   element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.3, alertRadius: 5, specialAbility: 'patrol', goldDrop: 15 },
+  { id: 'tombGuard', name: '守墓人', char: 'Š', fg: '#887766', hp: 55, attack: 10, defense: 13, exp: 35, behavior: EnemyBehavior.Revive,      element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.3, alertRadius: 5, specialAbility: 'patrol', goldDrop: 15 },
   { id: 'soulEater', name: '噬魂者', char: 'Ψ', fg: '#aa66ff', hp: 30, attack: 15, defense: 4,  exp: 30, behavior: EnemyBehavior.Aggressive,  element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 11, speed: 3, dropChance: 0.25, alertRadius: 7, specialAbility: 'phaseThrough', goldDrop: 12 },
   // Floor 16-20
-  { id: 'demon',     name: '恶魔',     char: 'Δ', fg: '#cc2222', hp: 65, attack: 16, defense: 11, exp: 50, behavior: EnemyBehavior.Aggressive,  element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 15, speed: 1, dropChance: 0.45, alertRadius: 7, specialAbility: 'fireball', goldDrop: 30 },
+  { id: 'demon',     name: '恶魔',     char: 'Δ', fg: '#cc2222', hp: 65, attack: 16, defense: 11, exp: 50, behavior: EnemyBehavior.Berserk,     element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 15, speed: 1, dropChance: 0.45, alertRadius: 7, specialAbility: 'fireball', goldDrop: 30 },
   { id: 'gorgon',    name: '蛇发女妖', char: 'Φ', fg: '#88aa44', hp: 70, attack: 14, defense: 13, exp: 55, behavior: EnemyBehavior.Aggressive,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 16, speed: 1, dropChance: 0.4, alertRadius: 6, specialAbility: 'petrify', goldDrop: 35 },
   { id: 'vampire',   name: '吸血鬼',   char: '√', fg: '#aa2222', hp: 55, attack: 15, defense: 9,  exp: 48, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 16, speed: 2, dropChance: 0.45, alertRadius: 7, specialAbility: 'drain', goldDrop: 30 },
-  { id: 'lich',      name: '巫妖',     char: 'L', fg: '#6644cc', hp: 60, attack: 18, defense: 8,  exp: 60, behavior: EnemyBehavior.Aggressive,  element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 18, speed: 1, dropChance: 0.5, alertRadius: 8, specialAbility: 'summon', goldDrop: 40 },
-  { id: 'lavaWorm',     name: '熔岩虫', char: '₩', fg: '#ff6622', hp: 48, attack: 12, defense: 6,  exp: 40, behavior: EnemyBehavior.Aggressive,  element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 16, speed: 2, dropChance: 0.3, alertRadius: 6, specialAbility: 'lavaSwim', goldDrop: 18 },
+  { id: 'lich',      name: '巫妖',     char: 'L', fg: '#6644cc', hp: 60, attack: 18, defense: 8,  exp: 60, behavior: EnemyBehavior.CallAlly,     element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 18, speed: 1, dropChance: 0.5, alertRadius: 8, specialAbility: 'summon', goldDrop: 40 },
+  { id: 'lavaWorm',     name: '熔岩虫', char: '₩', fg: '#ff6622', hp: 48, attack: 12, defense: 6,  exp: 40, behavior: EnemyBehavior.Berserk,     element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 16, speed: 2, dropChance: 0.3, alertRadius: 6, specialAbility: 'lavaSwim', goldDrop: 18 },
   { id: 'obsidianGolem', name: '黑曜石巨人', char: 'Θ', fg: '#443344', hp: 90, attack: 8,  defense: 18, exp: 55, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 16, speed: 0, dropChance: 0.4, alertRadius: 3, specialAbility: 'blockade', goldDrop: 25 },
   // Floor 21+
   { id: 'dragon',    name: '巨龙',     char: 'Ð', fg: '#ff4422', hp: 100,attack: 22, defense: 15, exp: 100,behavior: EnemyBehavior.Aggressive,  element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 20, speed: 1, dropChance: 0.6, alertRadius: 9, specialAbility: 'breath', goldDrop: 60 },
   { id: 'voidWalker',name: '虚空行者', char: 'Ø', fg: '#8844ff', hp: 80, attack: 20, defense: 11, exp: 80, behavior: EnemyBehavior.Aggressive,  element: Element.Lightning,  weakness: Element.None,       resistance: Element.Lightning,   minFloor: 22, speed: 2, dropChance: 0.5, alertRadius: 10, specialAbility: 'teleport', goldDrop: 50 },
   { id: 'ancientOne', name: '远古存在', char: 'A', fg: '#cc44ff', hp: 130,attack: 25, defense: 18, exp: 150,behavior: EnemyBehavior.Boss,       element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 25, speed: 1, dropChance: 1.0, alertRadius: 12, specialAbility: 'eldritch', goldDrop: 100 },
-  { id: 'voidWeaver',   name: '虚空织者', char: 'Λ', fg: '#cc44ff', hp: 72, attack: 18, defense: 9,  exp: 70, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 21, speed: 2, dropChance: 0.35, alertRadius: 8, specialAbility: 'blink', goldDrop: 22 },
+  { id: 'voidWeaver',   name: '虚空织者', char: 'Λ', fg: '#cc44ff', hp: 72, attack: 18, defense: 9,  exp: 70, behavior: EnemyBehavior.Split,       element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 21, speed: 2, dropChance: 0.35, alertRadius: 8, specialAbility: 'blink', goldDrop: 22 },
   { id: 'mirrorImage',  name: '镜像体', char: '©', fg: '#ff44ff', hp: 1,  attack: 0,  defense: 0,  exp: 5,  behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 21, speed: 1, dropChance: 0,    alertRadius: 10, specialAbility: 'mirrorExplode', goldDrop: 0 },
 ];
 
@@ -219,26 +219,72 @@ export const BOSS_DEFS: (EnemyDef & { isBoss: true })[] = [
 // Item Definitions
 // ============================================================
 export const WEAPON_DEFS = [
-  { name: '匕首',     char: '/', fg: '#aaaaaa', damage: 3,  element: Element.None,       rarity: Rarity.Common },
-  { name: '短剑',     char: '/', fg: '#aaaaaa', damage: 5,  element: Element.None,       rarity: Rarity.Common },
-  { name: '长剑',     char: '/', fg: '#cccccc', damage: 8,  element: Element.None,       rarity: Rarity.Common },
-  { name: '战斧',     char: '/', fg: '#ccaa44', damage: 10, element: Element.None,       rarity: Rarity.Good },
-  { name: '火焰之剑', char: '/', fg: '#ff6644', damage: 9,  element: Element.Fire,       rarity: Rarity.Rare },
-  { name: '寒冰之刃', char: '/', fg: '#44aaff', damage: 9,  element: Element.Ice,        rarity: Rarity.Rare },
-  { name: '雷霆之锤', char: '/', fg: '#cccc44', damage: 11, element: Element.Lightning,  rarity: Rarity.Rare },
-  { name: '暗影匕首', char: '/', fg: '#8844cc', damage: 12, element: Element.Poison,     rarity: Rarity.Epic },
-  { name: '毁灭之斧', char: '/', fg: '#ff4444', damage: 16, element: Element.Fire,       rarity: Rarity.Epic },
-  { name: '深渊之刃', char: '/', fg: '#ff44ff', damage: 20, element: Element.Poison,     rarity: Rarity.Legendary },
+  // ---- Common (1-2层) ----
+  { name: '匕首',       char: '/', fg: '#aaaaaa', damage: 3,  element: Element.None,      rarity: Rarity.Common,    bonusStat: 'dex' as const },
+  { name: '短剑',       char: '/', fg: '#aaaaaa', damage: 5,  element: Element.None,      rarity: Rarity.Common,    bonusStat: 'str' as const },
+  { name: '木棒',       char: '/', fg: '#886644', damage: 4,  element: Element.None,      rarity: Rarity.Common,    bonusStat: 'str' as const },
+  { name: '学徒法杖',   char: '/', fg: '#886644', damage: 2,  element: Element.None,      rarity: Rarity.Common,    bonusStat: 'int' as const },
+  { name: '猎人匕首',   char: '/', fg: '#88aa88', damage: 4,  element: Element.None,      rarity: Rarity.Common,    bonusStat: 'dex' as const },
+  // ---- Good (3-7层) ----
+  { name: '长剑',       char: '/', fg: '#cccccc', damage: 8,  element: Element.None,      rarity: Rarity.Good,      bonusStat: 'str' as const },
+  { name: '战斧',       char: '/', fg: '#ccaa44', damage: 10, element: Element.None,      rarity: Rarity.Good,      bonusStat: 'str' as const },
+  { name: '铁矛',       char: '/', fg: '#aaaaaa', damage: 7,  element: Element.None,      rarity: Rarity.Good,      bonusStat: 'str' as const },
+  { name: '秘银法杖',   char: '/', fg: '#88aacc', damage: 3,  element: Element.None,      rarity: Rarity.Good,      bonusStat: 'int' as const },
+  { name: '刺客短刃',   char: '/', fg: '#88aa88', damage: 6,  element: Element.None,      rarity: Rarity.Good,      bonusStat: 'dex' as const },
+  // ---- Rare (8-14层) ----
+  { name: '火焰之剑',   char: '/', fg: '#ff6644', damage: 9,  element: Element.Fire,      rarity: Rarity.Rare,      bonusStat: 'str' as const },
+  { name: '寒冰之刃',   char: '/', fg: '#44aaff', damage: 9,  element: Element.Ice,       rarity: Rarity.Rare,      bonusStat: 'dex' as const },
+  { name: '雷霆之锤',   char: '/', fg: '#cccc44', damage: 11, element: Element.Lightning, rarity: Rarity.Rare,      bonusStat: 'str' as const },
+  { name: '毒蛇之牙',   char: '/', fg: '#44cc44', damage: 7,  element: Element.Poison,    rarity: Rarity.Rare,      bonusStat: 'dex' as const, guaranteedEffect: EquipmentEffect.StatusProc as const },
+  { name: '符文长剑',   char: '/', fg: '#88aaff', damage: 8,  element: Element.None,      rarity: Rarity.Rare,      bonusStat: 'int' as const },
+  { name: '烈焰法杖',   char: '/', fg: '#ff6644', damage: 5,  element: Element.Fire,      rarity: Rarity.Rare,      bonusStat: 'int' as const },
+  { name: '寒冰法杖',   char: '/', fg: '#44aaff', damage: 5,  element: Element.Ice,       rarity: Rarity.Rare,      bonusStat: 'int' as const },
+  { name: '雷霆法杖',   char: '/', fg: '#cccc44', damage: 5,  element: Element.Lightning,  rarity: Rarity.Rare,      bonusStat: 'int' as const },
+  { name: '暗杀匕首',   char: '/', fg: '#884488', damage: 8,  element: Element.None,      rarity: Rarity.Rare,      bonusStat: 'dex' as const, guaranteedEffect: EquipmentEffect.CritBonus as const },
+  { name: '火焰战斧',   char: '/', fg: '#ff8844', damage: 12, element: Element.Fire,      rarity: Rarity.Rare,      bonusStat: 'str' as const },
+  // ---- Epic (15-19层) ----
+  { name: '暗影匕首',   char: '/', fg: '#8844cc', damage: 12, element: Element.Poison,    rarity: Rarity.Epic,      bonusStat: 'dex' as const },
+  { name: '毁灭之斧',   char: '/', fg: '#ff4444', damage: 16, element: Element.Fire,      rarity: Rarity.Epic,      bonusStat: 'str' as const },
+  { name: '暗影法杖',   char: '/', fg: '#8844cc', damage: 7,  element: Element.Poison,    rarity: Rarity.Epic,      bonusStat: 'int' as const },
+  { name: '吸血鬼之牙', char: '/', fg: '#cc4444', damage: 10, element: Element.None,      rarity: Rarity.Epic,      bonusStat: 'dex' as const, guaranteedEffect: EquipmentEffect.LifeSteal as const },
+  { name: '魔导书',     char: '/', fg: '#4488ff', damage: 6,  element: Element.Lightning,  rarity: Rarity.Epic,      bonusStat: 'int' as const, guaranteedEffect: EquipmentEffect.ManaSteal as const },
+  { name: '雷霆战锤',   char: '/', fg: '#cccc44', damage: 14, element: Element.Lightning, rarity: Rarity.Epic,      bonusStat: 'str' as const },
+  { name: '寒冰长矛',   char: '/', fg: '#44aaff', damage: 13, element: Element.Ice,       rarity: Rarity.Epic,      bonusStat: 'dex' as const },
+  { name: '处刑之斧',   char: '/', fg: '#ff4444', damage: 15, element: Element.None,      rarity: Rarity.Epic,      bonusStat: 'str' as const, guaranteedEffect: EquipmentEffect.KillReset as const },
+  // ---- Legendary (20+层) ----
+  { name: '深渊之刃',   char: '/', fg: '#ff44ff', damage: 20, element: Element.Poison,    rarity: Rarity.Legendary, bonusStat: 'str' as const },
+  { name: '虚空法杖',   char: '/', fg: '#ff44ff', damage: 10, element: Element.None,      rarity: Rarity.Legendary, bonusStat: 'int' as const },
+  { name: '永冻之枪',   char: '/', fg: '#44ccff', damage: 18, element: Element.Ice,       rarity: Rarity.Legendary, bonusStat: 'dex' as const },
+  { name: '灭世战锤',   char: '/', fg: '#ff4444', damage: 22, element: Element.Fire,      rarity: Rarity.Legendary, bonusStat: 'str' as const },
+  { name: '命运匕首',   char: '/', fg: '#ffcc44', damage: 14, element: Element.None,      rarity: Rarity.Legendary, bonusStat: 'dex' as const, guaranteedEffect: EquipmentEffect.CritBonus as const },
+  { name: '创世之杖',   char: '/', fg: '#ffcc44', damage: 9,  element: Element.Lightning,  rarity: Rarity.Legendary, bonusStat: 'int' as const, guaranteedEffect: EquipmentEffect.ManaSteal as const },
 ];
 
 export const ARMOR_DEFS = [
-  { name: '布甲',     char: '[', fg: '#aaaaaa', defense: 2,  evasion: 0,  rarity: Rarity.Common },
-  { name: '皮甲',     char: '[', fg: '#aa8844', defense: 4,  evasion: 2,  rarity: Rarity.Common },
-  { name: '锁子甲',   char: '[', fg: '#cccccc', defense: 6,  evasion: -1, rarity: Rarity.Common },
-  { name: '板甲',     char: '[', fg: '#888899', defense: 9,  evasion: -3, rarity: Rarity.Good },
-  { name: '暗影长袍', char: '[', fg: '#4444aa', defense: 5,  evasion: 5,  rarity: Rarity.Rare },
-  { name: '龙鳞甲',   char: '[', fg: '#ff4422', defense: 12, evasion: -2, rarity: Rarity.Epic },
-  { name: '虚空之铠', char: '[', fg: '#ff44ff', defense: 15, evasion: 0,  rarity: Rarity.Legendary },
+  // ---- Common (1-2层) ----
+  { name: '布甲',       char: '[', fg: '#aaaaaa', defense: 2,  evasion: 0,  rarity: Rarity.Common,    bonusStat: 'int' as const },
+  { name: '皮甲',       char: '[', fg: '#aa8844', defense: 4,  evasion: 2,  rarity: Rarity.Common,    bonusStat: 'dex' as const },
+  { name: '锁子甲',     char: '[', fg: '#cccccc', defense: 6,  evasion: -1, rarity: Rarity.Common,    bonusStat: 'vit' as const },
+  { name: '学者长袍',   char: '[', fg: '#88aacc', defense: 3,  evasion: 1,  rarity: Rarity.Common,    bonusStat: 'int' as const },
+  // ---- Good (3-7层) ----
+  { name: '板甲',       char: '[', fg: '#888899', defense: 9,  evasion: -3, rarity: Rarity.Good,      bonusStat: 'vit' as const },
+  { name: '猎手皮甲',   char: '[', fg: '#88aa44', defense: 5,  evasion: 4,  rarity: Rarity.Good,      bonusStat: 'dex' as const },
+  { name: '符文布甲',   char: '[', fg: '#8866aa', defense: 4,  evasion: 2,  rarity: Rarity.Good,      bonusStat: 'int' as const },
+  // ---- Rare (8-14层) ----
+  { name: '暗影长袍',   char: '[', fg: '#4444aa', defense: 5,  evasion: 5,  rarity: Rarity.Rare,      bonusStat: 'int' as const },
+  { name: '精灵皮甲',   char: '[', fg: '#44aa44', defense: 6,  evasion: 6,  rarity: Rarity.Rare,      bonusStat: 'dex' as const },
+  { name: '精钢铠甲',   char: '[', fg: '#aaaacc', defense: 10, evasion: -2, rarity: Rarity.Rare,      bonusStat: 'vit' as const },
+  { name: '火焰护甲',   char: '[', fg: '#ff6644', defense: 8,  evasion: 0,  rarity: Rarity.Rare,      bonusStat: 'vit' as const, guaranteedEffect: EquipmentEffect.ElementResist as const },
+  { name: '反刺皮甲',   char: '[', fg: '#aa4444', defense: 6,  evasion: 3,  rarity: Rarity.Rare,      bonusStat: 'dex' as const, guaranteedEffect: EquipmentEffect.Thorns as const },
+  // ---- Epic (15-19层) ----
+  { name: '龙鳞甲',     char: '[', fg: '#ff4422', defense: 12, evasion: -2, rarity: Rarity.Epic,      bonusStat: 'vit' as const },
+  { name: '暗夜之袍',   char: '[', fg: '#6644aa', defense: 7,  evasion: 7,  rarity: Rarity.Epic,      bonusStat: 'int' as const, guaranteedEffect: EquipmentEffect.DodgeMana as const },
+  { name: '不朽铠甲',   char: '[', fg: '#ccaa44', defense: 14, evasion: -3, rarity: Rarity.Epic,      bonusStat: 'vit' as const, guaranteedEffect: EquipmentEffect.DamageShield as const },
+  { name: '幻影皮甲',   char: '[', fg: '#88ccaa', defense: 8,  evasion: 8,  rarity: Rarity.Epic,      bonusStat: 'dex' as const },
+  // ---- Legendary (20+层) ----
+  { name: '虚空之铠',   char: '[', fg: '#ff44ff', defense: 15, evasion: 0,  rarity: Rarity.Legendary, bonusStat: 'vit' as const },
+  { name: '星辰法袍',   char: '[', fg: '#ffcc44', defense: 10, evasion: 8,  rarity: Rarity.Legendary, bonusStat: 'int' as const, guaranteedEffect: EquipmentEffect.CooldownReduce as const },
+  { name: '影舞者之衣', char: '[', fg: '#44ffaa', defense: 9,  evasion: 12, rarity: Rarity.Legendary, bonusStat: 'dex' as const, guaranteedEffect: EquipmentEffect.DodgeMana as const },
 ];
 
 export const POTION_DEFS = [
@@ -279,19 +325,19 @@ export const FOOD_DEFS = [
 // ============================================================
 export const SKILL_DEFS: Record<CharacterClass, SkillDef[]> = {
   [CharacterClass.Warrior]: [
-    { id: 'shieldBash', name: 'Shield Bash', nameZh: '盾击', description: '击退并眩晕相邻敌人2回合', mpCost: 8, maxCooldown: 3, element: Element.None, range: 1, radius: 0, power: 0, key: 'z', icon: '🛡' },
-    { id: 'warCry', name: 'War Cry', nameZh: '战吼', description: '提升5点防御，持续5回合', mpCost: 12, maxCooldown: 8, element: Element.None, range: 0, radius: 0, power: 5, key: 'x', icon: '📢' },
-    { id: 'whirlwind', name: 'Whirlwind', nameZh: '旋风斩', description: '攻击周围所有敌人，造成1.5倍武器伤害', mpCost: 15, maxCooldown: 6, element: Element.None, range: 0, radius: 1, power: 1, key: 'c', icon: '🌀' },
+    { id: 'shieldBash', name: 'Shield Bash', nameZh: '盾击', description: '击退并眩晕相邻敌人2回合', mpCost: 5, maxCooldown: 3, element: Element.None, range: 1, radius: 0, power: 0, key: 'z', icon: '🛡' },
+    { id: 'warCry', name: 'War Cry', nameZh: '战吼', description: '提升5点防御，持续5回合', mpCost: 8, maxCooldown: 8, element: Element.None, range: 0, radius: 0, power: 5, key: 'x', icon: '📢' },
+    { id: 'whirlwind', name: 'Whirlwind', nameZh: '旋风斩', description: '攻击周围所有敌人，造成1.5倍武器伤害', mpCost: 10, maxCooldown: 6, element: Element.None, range: 0, radius: 1, power: 1, key: 'c', icon: '🌀' },
   ],
   [CharacterClass.Mage]: [
-    { id: 'fireball', name: 'Fireball', nameZh: '火球术', description: '对视野内敌人发射火球，造成范围伤害', mpCost: 10, maxCooldown: 4, element: Element.Fire, range: 5, radius: 1, power: 20, key: 'z', icon: '🔥' },
-    { id: 'iceShield', name: 'Ice Shield', nameZh: '冰盾', description: '获得5点防御和冰冻免疫，持续5回合', mpCost: 8, maxCooldown: 6, element: Element.Ice, range: 0, radius: 0, power: 5, key: 'x', icon: '🧊' },
-    { id: 'chainLightning', name: 'Chain Lightning', nameZh: '闪电链', description: '对最近3个敌人释放闪电', mpCost: 15, maxCooldown: 5, element: Element.Lightning, range: 6, radius: 0, power: 18, key: 'c', icon: '⚡' },
+    { id: 'fireball', name: 'Fireball', nameZh: '火球术', description: '对视野内敌人发射火球，造成范围伤害', mpCost: 7, maxCooldown: 4, element: Element.Fire, range: 5, radius: 1, power: 20, key: 'z', icon: '🔥' },
+    { id: 'iceShield', name: 'Ice Shield', nameZh: '冰盾', description: '获得5点防御和冰冻免疫，持续5回合', mpCost: 6, maxCooldown: 6, element: Element.Ice, range: 0, radius: 0, power: 5, key: 'x', icon: '🧊' },
+    { id: 'chainLightning', name: 'Chain Lightning', nameZh: '闪电链', description: '对最近3个敌人释放闪电', mpCost: 10, maxCooldown: 5, element: Element.Lightning, range: 6, radius: 0, power: 18, key: 'c', icon: '⚡' },
   ],
   [CharacterClass.Rogue]: [
-    { id: 'shadowStep', name: 'Shadow Step', nameZh: '暗影步', description: '瞬移到最近敌人身边并造成2倍暴击', mpCost: 8, maxCooldown: 4, element: Element.None, range: 6, radius: 0, power: 2, key: 'z', icon: '👤' },
-    { id: 'poisonBlade', name: 'Poison Blade', nameZh: '毒刃', description: '下一次攻击附带剧毒(5伤害/4回合)', mpCost: 6, maxCooldown: 3, element: Element.Poison, range: 0, radius: 0, power: 5, key: 'x', icon: '🗡' },
-    { id: 'fanOfKnives', name: 'Fan of Knives', nameZh: '扇刃', description: '对2格内所有敌人造成伤害', mpCost: 12, maxCooldown: 5, element: Element.None, range: 0, radius: 2, power: 10, key: 'c', icon: '🔪' },
+    { id: 'shadowStep', name: 'Shadow Step', nameZh: '暗影步', description: '瞬移到最近敌人身边并造成2倍暴击', mpCost: 6, maxCooldown: 4, element: Element.None, range: 6, radius: 0, power: 2, key: 'z', icon: '👤' },
+    { id: 'poisonBlade', name: 'Poison Blade', nameZh: '毒刃', description: '下一次攻击附带剧毒(5伤害/4回合)', mpCost: 4, maxCooldown: 3, element: Element.Poison, range: 0, radius: 0, power: 5, key: 'x', icon: '🗡' },
+    { id: 'fanOfKnives', name: 'Fan of Knives', nameZh: '扇刃', description: '对2格内所有敌人造成伤害', mpCost: 8, maxCooldown: 5, element: Element.None, range: 0, radius: 2, power: 10, key: 'c', icon: '🔪' },
   ],
 };
 
@@ -496,8 +542,8 @@ export const ROOM_PADDING = 2;
 export const MIN_BSP_SIZE = 8;
 export const BSP_SPLIT_MIN = 0.35;
 export const BSP_SPLIT_MAX = 0.65;
-export const ENEMIES_PER_FLOOR_BASE = 4;
-export const ENEMIES_PER_FLOOR_GROWTH = 1.5;
+export const ENEMIES_PER_FLOOR_BASE = 6;
+export const ENEMIES_PER_FLOOR_GROWTH = 2;
 export const ITEMS_PER_FLOOR_BASE = 3;
 export const ITEMS_PER_FLOOR_GROWTH = 1.2;
 

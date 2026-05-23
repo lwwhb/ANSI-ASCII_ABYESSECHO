@@ -33,6 +33,8 @@ export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor
       alertRadius: bossDef.alertRadius,
       isBoss: true,
       goldDrop: Math.floor((bossDef.goldDrop ?? 50) * scale),
+      bossPhase: 1,
+      isElite: false,
     };
   }
 
@@ -64,6 +66,9 @@ export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor
     alertRadius: def.alertRadius,
     isBoss: false,
     goldDrop: Math.floor((def.goldDrop ?? 5) * scale),
+    hidden: def.behavior === 'ambush',
+    bossPhase: 1,
+    isElite: false,
   };
 }
 

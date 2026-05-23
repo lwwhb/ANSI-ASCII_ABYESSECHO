@@ -39,7 +39,7 @@ const MapView: React.FC = () => {
 
     const enemyMap = new Map<string, typeof enemies[0]>();
     for (const e of enemies) {
-      if (e.hp > 0) enemyMap.set(`${e.pos.x},${e.pos.y}`, e);
+      if (e.hp > 0 && !e.hidden) enemyMap.set(`${e.pos.x},${e.pos.y}`, e);
     }
 
     // Render tiles

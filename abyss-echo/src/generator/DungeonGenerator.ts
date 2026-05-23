@@ -1,4 +1,4 @@
-import { Tile, TileType, Position, Biome } from '../types';
+import { Tile, TileType, Position, Biome, EliteAffix, BossArenaData } from '../types';
 import { SeededRandom } from '../utils/random';
 import {
   MIN_ROOM_SIZE, MAX_ROOM_SIZE, ROOM_PADDING,
@@ -42,6 +42,11 @@ export interface DungeonData {
   items: { defIndex: number; pos: Position }[];
   shopPos?: Position;
   eventPos?: Position;
+  eliteEnemy?: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix };
+  eliteRoom?: Room;
+  specialRooms: { type: TileType; room: Room; pos: Position }[];
+  secretWalls: Position[];
+  bossArenaData?: BossArenaData;
 }
 
 // Export shared utility functions for use by biome-specific generators
@@ -285,7 +290,19 @@ export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, en
   const enemies: { defId: string; pos: Position; isBoss: boolean }[] = [];
   const spawnRooms = rooms.slice(1);
 
-  for (let i = 0; i < count; i++) {
+  // 先给每个非起始房间分配至少1只怪，确保无空房
+  for (const room of spawnRooms) {
+    const pos = {
+      x: rng.nextInt(room.x + 1, room.x + room.w - 2),
+      y: rng.nextInt(room.y + 1, room.y + room.h - 2),
+    };
+    const defId = rng.pick(enemyIds);
+    enemies.push({ defId, pos, isBoss: false });
+  }
+
+  // 再随机分配剩余怪物
+  const remaining = Math.max(0, count - spawnRooms.length);
+  for (let i = 0; i < remaining; i++) {
     const room = rng.pick(spawnRooms);
     if (!room) continue;
     const pos = {

@@ -227,6 +227,14 @@ export function getEnemyAction(
     return { dx, dy };
   }
 
+  // Ambush → 等玩家靠近才攻击，否则等待
+  if (enemy.behavior === 'ambush' && enemy.hidden) {
+    if (dist <= 1) {
+      return 'attack'; // 玩家踏入范围，解除伏击
+    }
+    return 'wait';
+  }
+
   // OPTIMIZATION: Use BFS pathfinding instead of simple sign-based movement
   const nextStep = bfsNextStep(enemy.pos, playerPos, map, enemies);
   if (nextStep) {

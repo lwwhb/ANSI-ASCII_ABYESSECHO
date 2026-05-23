@@ -3,8 +3,8 @@ import {
   GameState, GamePhase, Player, CharacterClass, Enemy, Item,
   TileType, Message, MessageCategory, Stats, EquipmentSlot,
   StatusEffectType, ItemType, PotionEffect, ScrollEffect, Element, Rarity,
-  WeaponItem, PotionItem, ScrollItem, FoodItem, FloorItem,
-  GameEventDef, Biome, Position,
+  WeaponItem, ArmorItem, PotionItem, ScrollItem, FoodItem, FloorItem,
+  GameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
 } from '../types';
 import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS } from '../constants';
 import { createScroll } from '../entities/Items';
@@ -15,7 +15,7 @@ import {
   calculateMeleeDamage, processStatusEffects, isFrozen, isConfused, applyConfusion,
   getEnemyAction, getTrapEffect, applyLevelUp, checkLevelUp, isTalentLevel,
 } from '../engine/Combat';
-import { createPlayer, getEffectiveStats, getPlayerWeaponDamage, getPlayerWeaponElement, equipItem, canEquipItem, getPlayerDefense, getMaxInventorySize } from '../entities/Player';
+import { createPlayer, getEffectiveStats, getPlayerWeaponDamage, getPlayerWeaponElement, equipItem, canEquipItem, getPlayerDefense, getMaxInventorySize, genId } from '../entities/Player';
 import { createEnemy } from '../entities/Enemy';
 import { createRandomItem, getItemName, identifyItem, createShopItems } from '../entities/Items';
 import { SeededRandom } from '../utils/random';
@@ -137,6 +137,36 @@ function deleteSave(reason?: string) {
 function hasTalent(player: Player, talentId: string): boolean {
   return player.talents.includes(talentId);
 }
+
+// 获取玩家装备中所有特效
+function getEquipmentEffects(player: Player): EquipmentEffect[] {
+  const effects: EquipmentEffect[] = [];
+  for (const slot of Object.values(EquipmentSlot)) {
+    const item = player.equipment[slot];
+    if (item && 'specialEffect' in item && item.specialEffect) {
+      effects.push(item.specialEffect);
+    }
+  }
+  return effects;
+}
+
+function hasEquipmentEffect(player: Player, effect: EquipmentEffect): boolean {
+  return getEquipmentEffects(player).includes(effect);
+}
+
+// 特效中文名
+const EFFECT_NAME_ZH: Record<EquipmentEffect, string> = {
+  [EquipmentEffect.LifeSteal]: '吸血',
+  [EquipmentEffect.ManaSteal]: '吸魔',
+  [EquipmentEffect.CritBonus]: '暴击强化',
+  [EquipmentEffect.KillReset]: '击杀重置',
+  [EquipmentEffect.StatusProc]: '元素触发',
+  [EquipmentEffect.Thorns]: '反伤',
+  [EquipmentEffect.DodgeMana]: '闪避回蓝',
+  [EquipmentEffect.DamageShield]: '受伤护盾',
+  [EquipmentEffect.CooldownReduce]: '冷却缩减',
+  [EquipmentEffect.ElementResist]: '元素抗性',
+};
 
 function getTalentModifiedHungerRate(player: Player): number {
   return hasTalent(player, 'ironStomach') ? HUNGER_RATE * 0.5 : HUNGER_RATE;
@@ -501,13 +531,14 @@ export const useGameStore = create<GameStore>((set, get) => {
     if (hasTalent(player, 'regeneration') && player.hp < player.maxHp) {
       player.hp = Math.min(player.maxHp, player.hp + 1);
     }
-    // Natural MP regen: INT/5 per turn
-    if (player.mp < player.maxMp) {
+    // MP regen: only in combat (enemies visible)
+    const enemyInSight = enemies.some(e => e.hp > 0 && state.visibleTiles.has(`${e.pos.x},${e.pos.y}`));
+    if (enemyInSight && player.mp < player.maxMp) {
       const mpRegen = Math.max(1, Math.floor(player.stats.int / 5));
       player.mp = Math.min(player.maxMp, player.mp + mpRegen);
     }
-    // Meditation talent: additional +1 MP per turn
-    if (hasTalent(player, 'meditation') && player.mp < player.maxMp) {
+    // Meditation talent: additional +1 MP per turn (only in combat)
+    if (hasTalent(player, 'meditation') && enemyInSight && player.mp < player.maxMp) {
       player.mp = Math.min(player.maxMp, player.mp + 1);
     }
 
@@ -595,8 +626,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             player.exp += exp;
             player.gold += goldDrop;
             player.killCount++;
-            // Kill MP regen: INT/2 per kill
-            if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
+
             if (enemies[i].isBoss) player.bossKillCount++;
             messages.push(msg(`${enemies[i].name}被效果杀死了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
             AudioManager.playSFX('coin');
@@ -607,6 +637,61 @@ export const useGameStore = create<GameStore>((set, get) => {
         // Fast enemies get multiple actions
         for (let action = 0; action < enemies[i].speed; action++) {
           const enemy = enemies[i]; // Re-read current state each action
+
+          // 装备行为修正：虫群ATK加成
+          let swarmBonus = 0;
+          if (enemy.behavior === EnemyBehavior.Swarm) {
+            const allies = enemies.filter(e => e.hp > 0 && e.id !== enemy.id && e.defId === enemy.defId && Math.abs(e.pos.x - enemy.pos.x) + Math.abs(e.pos.y - enemy.pos.y) <= 2);
+            if (allies.length >= 2) swarmBonus = Math.floor(enemy.attack * 0.5);
+          }
+
+          // 装备行为修正：狂暴ATK×2 DEF-5
+          let berserkAtkBonus = 0;
+          let berserkDefPenalty = 0;
+          if (enemy.behavior === EnemyBehavior.Berserk && enemy.hp < enemy.maxHp * 0.3) {
+            berserkAtkBonus = enemy.attack; // ATK×2
+            berserkDefPenalty = 5;
+          }
+
+          // 装备行为修正：呼唤——首次发现玩家时给同类加速
+          if (enemy.behavior === EnemyBehavior.CallAlly && !enemy.hasCalledAlly) {
+            const isVisible = visibleTiles.has(`${enemy.pos.x},${enemy.pos.y}`);
+            if (isVisible) {
+              enemies[i] = { ...enemies[i], hasCalledAlly: true };
+              let alerted = 0;
+              for (let j = 0; j < enemies.length; j++) {
+                if (j !== i && enemies[j].hp > 0 && enemies[j].defId === enemy.defId) {
+                  enemies[j] = { ...enemies[j], speed: enemies[j].speed + 1 };
+                  alerted++;
+                }
+              }
+              if (alerted > 0) {
+                messages.push(msg(`${enemy.name}发出警报！${alerted}个同伴获得加速！`, MessageCategory.Combat, '#ffcc44'));
+              }
+            }
+          }
+
+          // 装备行为修正：伏击——玩家靠近时解除hidden，首击×2
+          if (enemy.behavior === EnemyBehavior.Ambush && enemy.hidden) {
+            const dist = Math.abs(enemy.pos.x - player.pos.x) + Math.abs(enemy.pos.y - player.pos.y);
+            if (dist <= 1) {
+              enemies[i] = { ...enemies[i], hidden: false };
+              messages.push(msg(`${enemy.name}从暗处发起伏击！`, MessageCategory.Combat, '#ff4444'));
+              // 首击×2
+              const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player);
+              const ambushDamage = Math.max(1, Math.floor((enemy.attack + berserkAtkBonus) * 2 * 20 / (20 + defense)));
+              player.hp -= ambushDamage;
+              messages.push(msg(`伏击！${enemy.name}造成 ${ambushDamage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
+              flashScreen('#ff000033');
+              if (player.hp <= 0) { handlePlayerDeath(player, enemies, messages, `被${enemy.name}伏击`); return; }
+              continue;
+            }
+          }
+          // 被攻击解除伏击
+          if (enemy.behavior === EnemyBehavior.Ambush && enemy.hidden && visibleTiles.has(`${enemy.pos.x},${enemy.pos.y}`)) {
+            enemies[i] = { ...enemies[i], hidden: false };
+          }
+
           const actionResult = getEnemyAction(
             enemy, player.pos,
             currentMap,
@@ -624,14 +709,47 @@ export const useGameStore = create<GameStore>((set, get) => {
               return;
             }
           } else if (actionResult === 'attack') {
-            const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player);
+            const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player) - berserkDefPenalty;
             const variance = rng.nextInt(-2, 2);
-            const rawDamage = enemy.attack + variance;
-            const damage = Math.max(1, Math.floor(rawDamage * 20 / (20 + defense)));
-            player.hp -= damage;
-            messages.push(msg(`${enemy.name}攻击了你，造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
-            AudioManager.playSFX('hit');
-            flashScreen('#ff000033');
+            const rawDamage = enemy.attack + swarmBonus + berserkAtkBonus + variance;
+
+            // 装备特效：闪避回蓝 — 闪避判定在受伤前
+            const evasion = (player.equipment[EquipmentSlot.Armor] as ArmorItem | null)?.evasion ?? 0;
+            const totalEvasion = Math.floor(getEffectiveStats(player).dex / 5) + evasion;
+            const dodged = totalEvasion > 0 && rng.chance(Math.min(totalEvasion * 0.04, 0.3));
+
+            if (dodged) {
+              messages.push(msg(`你闪避了${enemy.name}的攻击！`, MessageCategory.Combat, '#44ccff'));
+              // 装备特效：闪避回蓝
+              if (hasEquipmentEffect(player, EquipmentEffect.DodgeMana) && player.mp < player.maxMp) {
+                player.mp = Math.min(player.maxMp, player.mp + 3);
+                messages.push(msg('闪避回蓝 +3 MP', MessageCategory.Combat, '#4488ff'));
+              }
+            } else {
+              const damage = Math.max(1, Math.floor(rawDamage * 20 / (20 + defense)));
+              player.hp -= damage;
+              messages.push(msg(`${enemy.name}攻击了你，造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
+              AudioManager.playSFX('hit');
+              flashScreen('#ff000033');
+
+              // 装备特效：反伤 — 反弹10%近战伤害
+              if (hasEquipmentEffect(player, EquipmentEffect.Thorns)) {
+                const thornDmg = Math.max(1, Math.floor(damage * 0.1));
+                const eIdx = enemies.findIndex(e => e.id === enemy.id);
+                if (eIdx >= 0) {
+                  enemies[eIdx] = { ...enemies[eIdx], hp: enemies[eIdx].hp - thornDmg };
+                  messages.push(msg(`反伤造成 ${thornDmg} 点伤害！`, MessageCategory.Combat, '#cc88ff'));
+                }
+              }
+
+              // 装备特效：受伤护盾 — 10%概率获得5防御5回合
+              if (hasEquipmentEffect(player, EquipmentEffect.DamageShield) && rng.chance(0.10)) {
+                if (!player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp)) {
+                  player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 5, damage: 5 }];
+                  messages.push(msg('受伤护盾触发！防御提升5点，持续5回合', MessageCategory.Combat, '#88ccff'));
+                }
+              }
+            }
 
             if (player.hp <= 0) {
               handlePlayerDeath(player, enemies, messages, `被${enemy.name}击杀`);
@@ -652,8 +770,31 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
     }
 
-    // Remove dead enemies
-    enemies = enemies.filter(e => e.hp > 0);
+    // Process revive timers & remove dead enemies
+    const enemiesToKeep: Enemy[] = [];
+    for (const e of enemies) {
+      if (e.hp > 0) {
+        enemiesToKeep.push(e);
+        continue;
+      }
+      // Revive behavior: 2-turn timer
+      if (e.behavior === EnemyBehavior.Revive && e.reviveTimer !== -1) {
+        if (e.reviveTimer === undefined) {
+          enemiesToKeep.push({ ...e, reviveTimer: 2 });
+          messages.push(msg(`${e.name}的骸骨散落一地...`, MessageCategory.Combat, '#887766'));
+        } else if (e.reviveTimer > 0) {
+          enemiesToKeep.push({ ...e, reviveTimer: e.reviveTimer - 1 });
+        } else {
+          // Revive at 30% HP, can only revive once (reviveTimer = -1 after)
+          enemiesToKeep.push({ ...e, hp: Math.floor(e.maxHp * 0.3), reviveTimer: -1, statusEffects: [] });
+          messages.push(msg(`${e.name}重新站了起来！`, MessageCategory.Combat, '#aa44ff'));
+          AudioManager.playSFX('levelup');
+        }
+        continue;
+      }
+      // Not revive, or already revived once: remove
+    }
+    enemies = enemiesToKeep;
 
     // Warning pulse: low HP / hunger
     const isLowHp = player.hp / player.maxHp < 0.3;
@@ -721,11 +862,15 @@ export const useGameStore = create<GameStore>((set, get) => {
   }
 
   function handleSpecialAbility(enemy: Enemy, player: Player, enemies: Enemy[], messages: Message[], rng: SeededRandom) {
+    // 装备特效：元素抗性 — 元素伤害-30%
+    const hasElementResist = hasEquipmentEffect(player, EquipmentEffect.ElementResist);
+
     switch (enemy.specialAbility) {
       case 'fireball': {
-        const damage = Math.floor(enemy.attack * 1.5);
+        let damage = Math.floor(enemy.attack * 1.5);
+        if (hasElementResist) { damage = Math.floor(damage * 0.7); }
         player.hp -= damage;
-        messages.push(msg(`${enemy.name}释放了火球术！造成 ${damage} 点🔥火伤害！`, MessageCategory.Combat, '#ff6644'));
+        messages.push(msg(`${enemy.name}释放了火球术！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#ff6644'));
         break;
       }
       case 'drain': {
@@ -772,9 +917,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         break;
       }
       case 'breath': {
-        const damage = Math.floor(enemy.attack * 1.8);
+        let damage = Math.floor(enemy.attack * 1.8);
+        if (hasElementResist) { damage = Math.floor(damage * 0.7); }
         player.hp -= damage;
-        messages.push(msg(`${enemy.name}喷出了龙息！造成 ${damage} 点🔥火伤害！`, MessageCategory.Combat, '#ff4422'));
+        messages.push(msg(`${enemy.name}喷出了龙息！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#ff4422'));
         break;
       }
       case 'teleport': {
@@ -789,13 +935,14 @@ export const useGameStore = create<GameStore>((set, get) => {
         break;
       }
       case 'eldritch': {
-        const damage = Math.floor(enemy.attack * 1.5);
+        let damage = Math.floor(enemy.attack * 1.5);
+        if (hasElementResist) { damage = Math.floor(damage * 0.7); }
         player.hp -= damage;
         if (rng.chance(0.4)) {
           player.statusEffects.push({ type: StatusEffectType.Poison, duration: 5, damage: 4 });
-          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！你中毒了！(☠4伤害/5回合)`, MessageCategory.Combat, '#cc44ff'));
+          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！你中毒了！(☠4伤害/5回合)${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#cc44ff'));
         } else {
-          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！`, MessageCategory.Combat, '#cc44ff'));
+          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#cc44ff'));
         }
         break;
       }
@@ -1071,6 +1218,25 @@ export const useGameStore = create<GameStore>((set, get) => {
           result = { ...result, damage: newDamage, elementalDamage: result.elementalDamage + extraElemental };
         }
 
+        // 装备特效：暴击强化 — 未暴击时额外10%暴击率
+        if (!result.critical && hasEquipmentEffect(player, EquipmentEffect.CritBonus) && rng.chance(0.10)) {
+          result = { ...result, damage: Math.floor(result.damage * 1.5), physicalDamage: Math.floor(result.physicalDamage * 1.5), elementalDamage: Math.floor(result.elementalDamage * 1.5), critical: true };
+        }
+
+        // 装备特效：元素触发 — 30%概率施加武器元素异常
+        if (hasEquipmentEffect(player, EquipmentEffect.StatusProc) && weaponElement !== Element.None && rng.chance(0.30)) {
+          const statusMap: Record<string, { type: StatusEffectType; duration: number; damage: number }> = {
+            fire: { type: StatusEffectType.Burn, duration: 3, damage: 4 },
+            ice: { type: StatusEffectType.Freeze, duration: 2, damage: 0 },
+            lightning: { type: StatusEffectType.Confusion, duration: 2, damage: 0 },
+            poison: { type: StatusEffectType.Poison, duration: 4, damage: 3 },
+          };
+          const effectDef = statusMap[weaponElement];
+          if (effectDef) {
+            enemy.statusEffects = [...enemy.statusEffects, { type: effectDef.type, duration: effectDef.duration, damage: effectDef.damage }];
+          }
+        }
+
         // Apply poison blade buff
         if (player.statusEffects.some(e => e.type === StatusEffectType.PoisonBlade)) {
           enemy.statusEffects = [...enemy.statusEffects, { type: StatusEffectType.Poison, duration: 4, damage: 5 }];
@@ -1126,17 +1292,80 @@ export const useGameStore = create<GameStore>((set, get) => {
           flashScreen('#88ccff33');
         }
 
+        // 装备特效：吸血 — 回复伤害的20%HP
+        if (hasEquipmentEffect(player, EquipmentEffect.LifeSteal)) {
+          const heal = Math.max(1, Math.floor(result.damage * 0.2));
+          player.hp = Math.min(player.maxHp, player.hp + heal);
+          messages.push(msg(`吸血回复 ${heal} HP`, MessageCategory.Combat, '#44cc44'));
+        }
+        // 装备特效：吸魔 — 回复伤害的15%MP
+        if (hasEquipmentEffect(player, EquipmentEffect.ManaSteal)) {
+          const mpGain = Math.max(1, Math.floor(result.damage * 0.15));
+          player.mp = Math.min(player.maxMp, player.mp + mpGain);
+          messages.push(msg(`吸魔回复 ${mpGain} MP`, MessageCategory.Combat, '#4488ff'));
+        }
+
         if (newHp <= 0) {
           const exp = getTalentModifiedExp(player, enemy.exp);
           const goldDrop = getTalentModifiedGoldDrop(player, enemy.goldDrop);
           player.exp += exp;
           player.killCount++;
-          // Kill MP regen: INT/2 per kill
-          if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
           if (enemy.isBoss) player.bossKillCount++;
           player.gold += goldDrop;
           messages.push(msg(`${enemy.name}被击败了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
           AudioManager.playSFX('coin');
+
+          // 装备特效：击杀重置 — 击杀后重置所有技能CD
+          if (hasEquipmentEffect(player, EquipmentEffect.KillReset)) {
+            player.skillCooldowns = [0, 0, 0];
+            messages.push(msg('击杀重置！技能冷却已恢复', MessageCategory.Combat, '#ffcc44'));
+          }
+
+          // Split behavior: 死亡时分裂为2个50%属性的小体
+          if (enemy.behavior === EnemyBehavior.Split) {
+            const def = ENEMY_DEFS.find(d => d.id === enemy.defId);
+            if (def) {
+              const splitCount = 2;
+              for (let s = 0; s < splitCount; s++) {
+                const offset = { x: rng.nextInt(-1, 1), y: rng.nextInt(-1, 1) };
+                const spawnPos = { x: enemy.pos.x + offset.x, y: enemy.pos.y + offset.y };
+                if (spawnPos.x >= 0 && spawnPos.x < state.width && spawnPos.y >= 0 && spawnPos.y < state.height && state.map[spawnPos.y][spawnPos.x].walkable) {
+                  const occupied = state.enemies.some(e => e.hp > 0 && e.pos.x === spawnPos.x && e.pos.y === spawnPos.y);
+                  if (!occupied) {
+                    const mini: Enemy = {
+                      id: genId(),
+                      defId: enemy.defId + '_mini',
+                      name: `${enemy.name}幼体`,
+                      char: enemy.char,
+                      fg: enemy.fg,
+                      bg: 'transparent',
+                      pos: spawnPos,
+                      hp: Math.floor(enemy.maxHp * 0.5),
+                      maxHp: Math.floor(enemy.maxHp * 0.5),
+                      attack: Math.floor(enemy.attack * 0.5),
+                      defense: Math.floor(enemy.defense * 0.5),
+                      exp: Math.floor(enemy.exp * 0.3),
+                      behavior: EnemyBehavior.Aggressive, // 幼体不再分裂
+                      element: enemy.element,
+                      weakness: enemy.weakness,
+                      resistance: enemy.resistance,
+                      speed: enemy.speed,
+                      statusEffects: [],
+                      dropChance: Math.max(0.1, enemy.dropChance * 0.5),
+                      specialAbility: enemy.specialAbility,
+                      alertRadius: enemy.alertRadius,
+                      isBoss: false,
+                      goldDrop: Math.floor(enemy.goldDrop * 0.3),
+                      bossPhase: 1,
+                      isElite: false,
+                    };
+                    enemies.push(mini);
+                  }
+                }
+              }
+              messages.push(msg(`${enemy.name}分裂了！`, MessageCategory.Combat, '#ff44ff'));
+            }
+          }
 
           // Switch music back to biome BGM after boss death
           if (enemy.isBoss) {
@@ -1538,7 +1767,6 @@ export const useGameStore = create<GameStore>((set, get) => {
               for (const e of killed) {
                 player.exp += getTalentModifiedExp(player, e.exp);
                 player.killCount++;
-                if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
                 if (e.isBoss) player.bossKillCount++;
                 player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
               }
@@ -1561,7 +1789,6 @@ export const useGameStore = create<GameStore>((set, get) => {
               for (const e of killed) {
                 player.exp += getTalentModifiedExp(player, e.exp);
                 player.killCount++;
-                if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
                 if (e.isBoss) player.bossKillCount++;
                 player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
               }
@@ -1581,7 +1808,6 @@ export const useGameStore = create<GameStore>((set, get) => {
                 if (closest.hp - power <= 0) {
                   player.exp += getTalentModifiedExp(player, closest.exp);
                   player.killCount++;
-                  if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
                   if (closest.isBoss) player.bossKillCount++;
                   player.gold += getTalentModifiedGoldDrop(player, closest.goldDrop);
                 }
@@ -1905,7 +2131,9 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       player.mp -= skill.mpCost;
       player.skillCooldowns = [...player.skillCooldowns];
-      player.skillCooldowns[skillIndex] = skill.maxCooldown;
+      // 装备特效：冷却缩减 — CD-1（最低1）
+      const cdReduce = hasEquipmentEffect(player, EquipmentEffect.CooldownReduce) ? 1 : 0;
+      player.skillCooldowns[skillIndex] = Math.max(1, skill.maxCooldown - cdReduce);
 
       const rng = new SeededRandom(state.seed + state.turn * 17 + skillIndex);
       const messages: Message[] = [];
@@ -1962,7 +2190,6 @@ export const useGameStore = create<GameStore>((set, get) => {
           for (const e of enemies.filter(e2 => e2.hp <= 0 && whirlHitIds.has(e2.id))) {
             player.exp += getTalentModifiedExp(player, e.exp);
             player.killCount++;
-            if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2)));
             if (e.isBoss) player.bossKillCount++;
             player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
           }
@@ -1985,7 +2212,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             });
             messages.push(msg(fbCrit ? `暴击！火球术！造成 ${dmg} 点火焰伤害！` : `火球术！造成 ${dmg} 点火焰伤害！`, MessageCategory.Combat, fbCrit ? '#ffcc44' : '#ff6644'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && fbHitIds.has(e2.id))) {
-              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
           } else {
             messages.push(msg('范围内没有敌人！', MessageCategory.System, '#888888'));
@@ -2012,7 +2239,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             enemies = enemies.map(e => hitIds.has(e.id) ? { ...e, hp: e.hp - dmg } : e);
             messages.push(msg(clCrit ? `暴击！闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！` : `闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！`, MessageCategory.Combat, clCrit ? '#ffcc44' : '#cccc44'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && hitIds.has(e2.id))) {
-              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
           } else {
             messages.push(msg('范围内没有敌人！', MessageCategory.System, '#888888'));
@@ -2042,7 +2269,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               enemies = enemies.map(e => e.id === target.id ? { ...e, hp: e.hp - critDmg } : e);
               messages.push(msg(`暗影步！瞬移到${target.name}身边，暴击造成 ${critDmg} 点伤害！`, MessageCategory.Combat, '#8844ff'));
               if (target.hp - critDmg <= 0) {
-                player.exp += getTalentModifiedExp(player, target.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (target.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, target.goldDrop);
+                player.exp += getTalentModifiedExp(player, target.exp); player.killCount++; if (target.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, target.goldDrop);
               }
             } else {
               messages.push(msg('无法瞬移到目标身边！', MessageCategory.System, '#888888'));
@@ -2075,7 +2302,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           });
           messages.push(msg(fokCrit ? `暴击！扇刃！对 ${hitCount} 个敌人造成 ${dmg} 点伤害！` : `扇刃！对 ${hitCount} 个敌人造成 ${dmg} 点伤害！`, MessageCategory.Combat, fokCrit ? '#ffcc44' : '#aaaaaa'));
           for (const e of enemies.filter(e2 => e2.hp <= 0 && fokHitIds.has(e2.id))) {
-            player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + Math.max(1, Math.floor(player.stats.int / 2))); if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+            player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
           }
           break;
         }

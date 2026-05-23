@@ -173,6 +173,7 @@ All commands run from `abyss-echo/`:
 - Scroll kill rewards: Fireball/IceStorm/Lightning scrolls now grant gold drops and talent-modified exp (previously only granted raw exp + killCount)
 - CombatResult split damage: `physicalDamage` and `elementalDamage` fields in CombatResult allow melee attack messages to display "X 物理 + Y🔥火" format; total damage still in `damage` field
 - Poison message details: all poison effects (poison blade, toxic blade talent, enemy poison/poisonSting/eldritch) now show specific damage/duration like "(☠5伤害/4回合)"
+- MP regen: only per-turn natural regen (INT/5 per turn); kill MP regen removed
 - Boss room visual: `markBossRoom()` sets special `bg` on boss room floor tiles (biome-themed dark colors); `placeBoss()` returns `bossRoom` info for generators to call `markBossRoom()`
 - Wall rendering: all biome wall `bg` colors match `fg` to eliminate character rendering gaps (seamless walls)
 - Crystal cave side-caves: 2-3 small caves with narrow tunnels added at cave periphery, connected to main cave
