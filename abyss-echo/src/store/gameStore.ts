@@ -632,6 +632,73 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
     }
 
+    // Arena: Lava pool overflow (every 3 turns on demonLord floor)
+    if (state.turn % 3 === 0 && state.enemies.some(e => e.isBoss && e.defId === 'demonLord' && e.hp > 0)) {
+      for (let y = 0; y < currentMap.length; y++) {
+        for (let x = 0; x < currentMap[0].length; x++) {
+          if (currentMap[y][x].type === TileType.LavaPool) {
+            const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+            for (const [dx, dy] of dirs) {
+              const nx = x + dx, ny = y + dy;
+              if (ny >= 0 && ny < currentMap.length && nx >= 0 && nx < currentMap[0].length) {
+                if (currentMap[ny][nx].type === TileType.Floor || currentMap[ny][nx].type === TileType.Corridor) {
+                  currentMap[ny][nx] = { ...currentMap[ny][nx], type: TileType.Lava, char: '~', fg: '#ff4400', bg: '#1a0a04', walkable: false, transparent: true };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    // Lava reverts next turn
+    if (state.turn % 3 === 1) {
+      for (let y = 0; y < currentMap.length; y++) {
+        for (let x = 0; x < currentMap[0].length; x++) {
+          if (currentMap[y][x].type === TileType.Lava) {
+            currentMap[y][x] = { ...currentMap[y][x], type: TileType.CooledLava, char: '=', fg: '#553322', bg: '#1a0a04', walkable: true, transparent: true };
+          }
+        }
+      }
+    }
+
+    // Arena: Void rift teleport (every 5 turns)
+    if (state.turn % 5 === 0) {
+      const rifts: Position[] = [];
+      for (let y = 0; y < state.map.length; y++) {
+        for (let x = 0; x < state.map[0].length; x++) {
+          if (state.map[y][x].type === TileType.VoidRift) rifts.push({ x, y });
+        }
+      }
+      if (rifts.length >= 2) {
+        // Check if player is adjacent to a rift
+        for (const rift of rifts) {
+          if (Math.abs(player.pos.x - rift.x) <= 1 && Math.abs(player.pos.y - rift.y) <= 1) {
+            // Teleport to another rift
+            const otherRift = rifts.find(r => r.x !== rift.x || r.y !== rift.y);
+            if (otherRift) {
+              player.pos = { ...otherRift };
+              messages.push(msg('虚空裂隙将你传送到了另一个位置！', MessageCategory.Environment, '#cc44ff'));
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // Arena: Corruption pool damage (every 2 turns)
+    if (state.turn % 2 === 0) {
+      let hasCorruptionPool = false;
+      for (let y = 0; y < state.map.length && !hasCorruptionPool; y++) {
+        for (let x = 0; x < state.map[0].length && !hasCorruptionPool; x++) {
+          if (state.map[y][x].type === TileType.CorruptionPool) hasCorruptionPool = true;
+        }
+      }
+      if (hasCorruptionPool) {
+        player.hp = Math.max(0, player.hp - 2);
+        messages.push(msg('腐蚀池的毒气侵蚀了你！受到2点伤害！', MessageCategory.Combat, '#aa44ff'));
+      }
+    }
+
     // Process enemy turns
     if (!playerFrozen) {
       const visibleTiles = state.visibleTiles;
@@ -1706,6 +1773,18 @@ export const useGameStore = create<GameStore>((set, get) => {
           messages.push(msg(`${enemy.name}被击败了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
           AudioManager.playSFX('coin');
 
+          // Place monument at boss position
+          if (enemy.isBoss) {
+            const bossPos = enemy.pos;
+            if (bossPos.y >= 0 && bossPos.y < state.map.length && bossPos.x >= 0 && bossPos.x < state.map[0].length) {
+              const newMap = state.map.map(row => row.map(t => ({ ...t })));
+              newMap[bossPos.y][bossPos.x] = { type: TileType.Monument, char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true, visible: false, remembered: false };
+              set({ map: newMap });
+            }
+            // Trigger boss blessing selection
+            set({ bossBlessingPending: true, lastBossDefId: enemy.defId });
+          }
+
           // Elite Explosive: Death blast dealing ATK×1.5 in 2-tile radius
           if (enemy.isElite && enemy.eliteAffix === EliteAffix.Explosive) {
             const blastDmg = Math.floor(enemy.attack * 1.5);
@@ -1830,8 +1909,19 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
 
       const tile = state.map[ny][nx];
+
+      // SecretWall: player passes through
+      if (tile.type === TileType.SecretWall) {
+        player.pos = { x: nx, y: ny };
+        addMessages([msg('你穿过了一道暗墙！', MessageCategory.System, '#aa88aa')]);
+        set({ player });
+        processTurn();
+        return;
+      }
+
       if (!tile.walkable) {
         if (tile.type === TileType.Door) {
+          // Door interaction (existing)
           const newMap = state.map.map(row => row.map(t => ({ ...t })));
           newMap[ny][nx] = {
             ...newMap[ny][nx],
@@ -1845,6 +1935,47 @@ export const useGameStore = create<GameStore>((set, get) => {
           addMessages([msg('你打开了门', MessageCategory.Environment, '#aa8844')]);
           AudioManager.playSFX('door');
           return;
+        }
+        // Barricade (木栏): Attack to destroy
+        if (tile.type === TileType.Barricade) {
+          const newMap = state.map.map(row => row.map(t => ({ ...t })));
+          newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '.', fg: '#555555', bg: 'transparent', walkable: true, transparent: true };
+          set({ map: newMap });
+          addMessages([msg('你破坏了木栏！', MessageCategory.System, '#aa8844')]);
+          return;
+        }
+        // EliteDoor (精英门): Open on interaction
+        if (tile.type === TileType.EliteDoor) {
+          const newMap = state.map.map(row => row.map(t => ({ ...t })));
+          newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.DoorOpen, char: '/', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true };
+          set({ map: newMap });
+          addMessages([msg('你推开了铁门。前方传来强大的气息…', MessageCategory.System, '#ffd700')]);
+          return;
+        }
+        // VoidPillar (虚空柱): Attack to destroy, reduces boss ATK by 3
+        if (tile.type === TileType.VoidPillar) {
+          const newMap = state.map.map(row => row.map(t => ({ ...t })));
+          newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '.', fg: '#555555', bg: 'transparent', walkable: true, transparent: true };
+          set({ map: newMap });
+          addMessages([msg('你击碎了虚空柱！', MessageCategory.System, '#aa88ff')]);
+          // Boss ATK-3
+          const boss = state.enemies.find(e => e.isBoss && e.hp > 0);
+          if (boss && (boss.defId === 'abyssKing' || boss.defId === 'abyssHeart')) {
+            const enemies = state.enemies.map(e => {
+              if (e.id === boss.id) {
+                return { ...e, attack: Math.max(1, boss.attack - 3) };
+              }
+              return e;
+            });
+            set({ enemies });
+            addMessages([msg(`${boss.name}的力量减弱了！`, MessageCategory.System, '#ff4444')]);
+          }
+          return;
+        }
+        // LavaPool: Can't walk into it (like Lava)
+        // Already handled by walkable:false — no special interaction needed
+
+        if (tile.type === TileType.Sarcophagus) {
         }
         if (tile.type === TileType.Sarcophagus) {
           // 50% good, 50% bad
@@ -1975,6 +2106,89 @@ export const useGameStore = create<GameStore>((set, get) => {
         }
       }
 
+      // WebFloor: Slow movement
+      if (tile.type === TileType.WebFloor) {
+        set({ extraTurnCost: 1 });
+        addMessages([msg('蛛网缠住了你的脚！移动速度降低。', MessageCategory.Environment, '#aaaaaa')]);
+      }
+
+      // SpiderEgg: Hatch into baby spider
+      if (tile.type === TileType.SpiderEgg) {
+        const hatchPos = { x: nx, y: ny };
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '.', fg: '#555555', bg: 'transparent', walkable: true, transparent: true };
+        set({ map: newMap });
+        const babySpider = createEnemy('spider', hatchPos, false, state.currentFloor);
+        if (babySpider) {
+          babySpider.name = '幼蛛';
+          babySpider.hp = Math.max(1, Math.floor(babySpider.maxHp * 0.4));
+          babySpider.maxHp = babySpider.hp;
+          babySpider.attack = Math.max(1, Math.floor(babySpider.attack * 0.5));
+          babySpider.char = 's';
+          const enemies = [...state.enemies, babySpider];
+          set({ enemies });
+          addMessages([msg('蛛卵破裂！一只幼蛛爬了出来！', MessageCategory.Combat, '#aaaaaa')]);
+        }
+      }
+
+      // Altar: +3 DEF for 3 turns
+      if (tile.type === TileType.Altar) {
+        player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 3, damage: 3 }];
+        set({ player });
+        addMessages([msg('祭坛的力量涌遍全身！防御+3持续3回合！', MessageCategory.System, '#88ccff')]);
+      }
+
+      // Fountain: Heal 50% HP + 20 MP (one-time use)
+      if (tile.type === TileType.Fountain) {
+        const hpHeal = Math.floor(player.maxHp * 0.5);
+        player.hp = Math.min(player.maxHp, player.hp + hpHeal);
+        player.mp = Math.min(player.maxMp, player.mp + 20);
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#335577', bg: 'transparent', walkable: true, transparent: true };
+        set({ map: newMap, player });
+        addMessages([msg('治愈泉的泉水恢复了你的力量！', MessageCategory.Item, '#44aaff')]);
+      }
+
+      // Inscription: Read lore + permanent buff
+      if (tile.type === TileType.Inscription) {
+        const biome = getBiomeForFloor(state.currentFloor);
+        const biomeKey = biome; // Biome enum values are already strings
+        const text = INSCRIPTION_TEXTS[biomeKey];
+        if (text) {
+          addMessages([msg(`碑文：${text}`, MessageCategory.Story, '#aaaaaa')]);
+        }
+        player.inscriptionCount++;
+        player.bonusStats = {
+          ...player.bonusStats,
+          str: player.bonusStats.str + 1,
+          dex: player.bonusStats.dex + 1,
+          int: player.bonusStats.int + 1,
+          vit: player.bonusStats.vit + 1,
+        };
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#aaaaaa', bg: 'transparent', walkable: true, transparent: true };
+        set({ map: newMap, player });
+        addMessages([msg('碑文的力量融入了你的身体！全属性+1！', MessageCategory.System, '#ffcc44')]);
+      }
+
+      // HealCrystal: Heal 30% HP (one-time use)
+      if (tile.type === TileType.HealCrystal) {
+        const hpHeal = Math.floor(player.maxHp * 0.3);
+        player.hp = Math.min(player.maxHp, player.hp + hpHeal);
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#005533', bg: 'transparent', walkable: true, transparent: true };
+        set({ map: newMap, player });
+        addMessages([msg(`治愈水晶碎裂，回复了${hpHeal}点HP！`, MessageCategory.Item, '#44cc44')]);
+      }
+
+      // CorruptionPool: Already handled by periodic effect
+      // VoidRift: Already handled by periodic effect
+
+      // Monument: Show boss memorial
+      if (tile.type === TileType.Monument) {
+        addMessages([msg('纪念碑上刻着已逝Boss的名字。', MessageCategory.Story, '#ffd700')]);
+      }
+
       // Check for shop
       if (tile.type === TileType.Shop && state.shopItems.length > 0) {
         addMessages([msg('你发现了流浪商人！按P打开商店', MessageCategory.Item, '#ffcc44')]);
@@ -1994,6 +2208,21 @@ export const useGameStore = create<GameStore>((set, get) => {
           addMessages([msg(`地上有 ${names}，按 , 拾取`, MessageCategory.Item, '#4488ff')]);
         } else {
           addMessages([msg('地上有物品，但背包已满！', MessageCategory.System, '#ff4444')]);
+        }
+      }
+
+      // SecretWall proximity hint
+      const adjDirs = [[0,-1],[0,1],[-1,0],[1,0]];
+      const checkX = player.pos.x;
+      const checkY = player.pos.y;
+      for (const [dx, dy] of adjDirs) {
+        const nx_adj = checkX + dx;
+        const ny_adj = checkY + dy;
+        if (ny_adj >= 0 && ny_adj < state.map.length && nx_adj >= 0 && nx_adj < state.map[0].length) {
+          if (state.map[ny_adj][nx_adj].type === TileType.SecretWall && state.map[ny_adj][nx_adj].visible) {
+            addMessages([msg('墙壁似乎有裂缝…', MessageCategory.System, '#aa88aa')]);
+            break;
+          }
         }
       }
 
