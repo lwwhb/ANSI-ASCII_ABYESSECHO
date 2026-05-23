@@ -490,6 +490,9 @@ export interface Player extends EntityBase {
   comboAttackCount: number;
   voidHeartUsed: boolean;
   extraTurnAccumulator: number;
+  // Temporary tracking fields (optional)
+  _mirrorShieldUsed?: boolean;
+  _lifeSeedUsedThisFloor?: boolean;
 }
 
 // --- Messages ---

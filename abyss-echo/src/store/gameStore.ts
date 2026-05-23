@@ -5,9 +5,18 @@ import {
   StatusEffectType, ItemType, PotionEffect, ScrollEffect, Element, Rarity,
   WeaponItem, ArmorItem, PotionItem, ScrollItem, FoodItem, FloorItem,
   GameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
-  BossBlessing, EliteAffix,
+  BossBlessing, EliteAffix, RelicId, RelicRarity, RoomTheme,
 } from '../types';
-import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS } from '../constants';
+import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS, ENHANCE_COSTS, ENHANCE_SUCCESS_RATES, ENHANCE_ATK_MULT, ENHANCE_DEF_MULT } from '../constants';
+import { RELIC_DEFS, RELICS_BY_RARITY, ELEMENT_RELICS } from '../constants/relics';
+import { THEMED_ROOM_CONFIGS, THEMES_BY_BIOME } from '../constants/themedRooms';
+import { CHAIN_REACTIONS, TERRAIN_ELEMENTS, isSteamVentActive } from '../constants/elementalChain';
+import { EXTENDED_EVENT_DEFS } from '../constants/events';
+import { hasRelic, getRelicAtkModifier, getRelicGoldModifier, getRelicShopPriceModifier,
+         getRelicForgeCostModifier, getRelicBurnDamageModifier, getRelicPoisonDamageModifier,
+         isRelicBurnImmune, rollRelicStatusProc, getCurseVesselBonus, getElementResonanceActive,
+         shouldSilentStepPreventAggro, rollRandomRelic } from '../engine/RelicEffects';
+import { checkChainReactionWithMap, getTerrainElementsAt, getEnemyElementDebuffs, executeChainReaction, ChainResult } from '../engine/ElementalChain';
 import { createScroll } from '../entities/Items';
 import { createFood } from '../entities/Items';
 import { generateDungeon, createTile } from '../generator/DungeonGenerator';
@@ -292,6 +301,7 @@ interface GameStore extends GameState {
   chooseEventChoice: (choiceIndex: number) => void;
   closeEvent: () => void;
   chooseBossBlessing: (blessing: BossBlessing) => void;
+  enhanceEquipment: (slot: EquipmentSlot) => void;
   restartGame: () => void;
   setPhase: (phase: GamePhase) => void;
   toggleMusic: () => void;
@@ -394,6 +404,17 @@ export const useGameStore = create<GameStore>((set, get) => {
 
   function handlePlayerDeath(player: Player, enemies: Enemy[], messages: Message[], deathCause: string) {
     const state = get();
+
+    // VoidHeart: prevent first death
+    if (player.relics.includes(RelicId.VoidHeart) && !player.voidHeartUsed) {
+      player.hp = Math.floor(player.maxHp * 0.5);
+      player.voidHeartUsed = true;
+      player.relics = player.relics.filter(r => r !== RelicId.VoidHeart);
+      set({ player });
+      addMessages([msg('🟣 虚空之心碎裂！你从死亡边缘被拉回！', MessageCategory.Item, '#aa44ff')]);
+      return; // Don't proceed to game over
+    }
+
     messages.push(msg('你倒在了深渊之中...', MessageCategory.System, '#ff0000'));
     AudioManager.playSFX('death');
     flashScreen('#ff0000');
@@ -517,6 +538,24 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     // Process player status effects
     if (player.statusEffects.length > 0) {
+      // Relic: FlameHeart - Burn damage * 1.5
+      if (hasRelic(player, 'flameHeart')) {
+        const burnEffect = player.statusEffects.find(e => e.type === StatusEffectType.Burn);
+        if (burnEffect) {
+          burnEffect.damage = Math.floor(burnEffect.damage * 1.5);
+        }
+      }
+      // Relic: PoisonGland - Poison damage * 1.3
+      if (hasRelic(player, 'poisonGland')) {
+        const poisonEffect = player.statusEffects.find(e => e.type === StatusEffectType.Poison);
+        if (poisonEffect) {
+          poisonEffect.damage = Math.floor(poisonEffect.damage * 1.3);
+        }
+      }
+      // Relic: isRelicBurnImmune - skip Burn application on player
+      let burnImmune = isRelicBurnImmune(player);
+      player.statusEffects = player.statusEffects.filter(e => !(burnImmune && e.type === StatusEffectType.Burn));
+
       const result = processStatusEffects(player, true);
       player.hp -= result.damage;
       if (result.damage > 0) messages.push(...result.messages.map(m => msg(m, MessageCategory.Combat, '#ff4444')));
@@ -573,6 +612,42 @@ export const useGameStore = create<GameStore>((set, get) => {
       player.mp = Math.min(player.maxMp, player.mp + 1);
     }
 
+    // Relic: Eternal Flame - heal 5% maxHp when standing on Lava/CooledLava
+    if (hasRelic(player, 'eternalFlame')) {
+      const tile = state.map[player.pos.y]?.[player.pos.x];
+      if (tile && (tile.type === TileType.Lava || tile.type === TileType.CooledLava)) {
+        const heal = Math.floor(player.maxHp * 0.05);
+        player.hp = Math.min(player.maxHp, player.hp + heal);
+        messages.push(msg('永恒之焰回复了' + heal + '点HP', MessageCategory.Item, '#ff6644'));
+      }
+    }
+
+    // Relic: Sixth Sense - auto-reveal adjacent SecretWalls
+    if (hasRelic(player, 'sixthSense')) {
+      const dirs = [[0,-1],[0,1],[-1,0],[1,0],[1,1],[1,-1],[-1,1],[-1,-1]];
+      for (const [dx, dy] of dirs) {
+        const nx = player.pos.x + dx;
+        const ny = player.pos.y + dy;
+        if (ny >= 0 && ny < currentMap.length && nx >= 0 && nx < currentMap[0].length) {
+          if (currentMap[ny][nx].type === TileType.SecretWall && state.visibleTiles.has(`${nx},${ny}`)) {
+            // SecretWall revealed - now passable
+            // The actual pass-through is handled in movePlayer
+          }
+        }
+      }
+    }
+
+    // Relic: Time Hourglass - every 5 turns, grant extra action
+    if (hasRelic(player, 'timeHourglass')) {
+      if (!player.extraTurnAccumulator) player.extraTurnAccumulator = 0;
+      player.extraTurnAccumulator++;
+      if (player.extraTurnAccumulator >= 5) {
+        messages.push(msg('时间沙漏触发：额外获得一回合！', MessageCategory.Item, '#ffcc44'));
+        player.extraTurnAccumulator -= 5;
+        // This creates a "negative" turn cost that will be processed next turn
+      }
+    }
+
     // Decrease skill cooldowns
     player.skillCooldowns = player.skillCooldowns.map(cd => Math.max(0, cd - 1));
 
@@ -621,6 +696,22 @@ export const useGameStore = create<GameStore>((set, get) => {
           lavaTideTiles = [];
           messages.push(msg('熔岩退潮了。', MessageCategory.Environment, '#994433'));
         }
+      }
+    }
+
+    // Steam Vent eruption (every 3 turns)
+    let activeSteamVents: number[] = [];
+    if (state.turn > 0 && state.turn % 3 === 0) {
+      for (let y = 0; y < currentMap.length; y++) {
+        for (let x = 0; x < currentMap[0].length; x++) {
+          if (currentMap[y][x].type === TileType.SteamVent) {
+            activeSteamVents.push(y * state.width + x);
+          }
+        }
+      }
+      if (activeSteamVents.length > 0) {
+        messages.push(msg('蒸汽口喷发了！视野被遮蔽...', MessageCategory.Environment, '#aadddd'));
+        // Store active steam vents for fog effect in rendering
       }
     }
 
@@ -722,7 +813,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             const exp = getTalentModifiedExp(player, enemies[i].exp);
             const goldDrop = getTalentModifiedGoldDrop(player, enemies[i].goldDrop);
             player.exp += exp;
-            player.gold += goldDrop;
+            player.gold += Math.floor(goldDrop * (1 + getRelicGoldModifier(player)));
             player.killCount++;
 
             if (enemies[i].isBoss) player.bossKillCount++;
@@ -905,7 +996,22 @@ export const useGameStore = create<GameStore>((set, get) => {
                 messages.push(msg('闪避回蓝 +3 MP', MessageCategory.Combat, '#4488ff'));
               }
             } else {
-              const damage = Math.max(1, Math.floor(rawDamage * 20 / (20 + defense)));
+              let damage = Math.max(1, Math.floor(rawDamage * 20 / (20 + defense)));
+
+              // MirrorShield: reflect first damage per floor
+              if (hasRelic(player, RelicId.MirrorShield) && !player._mirrorShieldUsed) {
+                player._mirrorShieldUsed = true;
+                const reflectedDmg = Math.floor(damage * 0.5);
+                // Find the attacking enemy and deal reflected damage
+                const eIdx = enemies.findIndex(e => e.id === enemy.id);
+                if (eIdx >= 0) {
+                  enemies[eIdx] = { ...enemies[eIdx], hp: enemies[eIdx].hp - reflectedDmg };
+                }
+                messages.push(msg('🪞 镜之盾反弹了部分伤害！', MessageCategory.Combat, '#aaddff'));
+                // Player still takes damage but reduced
+                damage = Math.floor(damage * 0.5);
+              }
+
               player.hp -= damage;
               messages.push(msg(`${enemy.name}攻击了你，造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
               AudioManager.playSFX('hit');
@@ -1460,10 +1566,22 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Pick random event if there's an event tile
     let currentEvent: GameEventDef | null = null;
     if (dungeon.eventPos) {
-      currentEvent = rng.pick(GAME_EVENTS);
+      // Merge old and new events, weighted by biome affinity
+      const allEvents = [...GAME_EVENTS];
+      if (EXTENDED_EVENT_DEFS && EXTENDED_EVENT_DEFS.length > 0) {
+        allEvents.push(...EXTENDED_EVENT_DEFS);
+      }
+      currentEvent = rng.pick(allEvents);
     }
 
     const player = { ...state.player, pos: { ...dungeon.playerStart } };
+
+    // Store themed rooms and steam vent turns from dungeon data
+    const themedRooms = (dungeon as any).themedRooms || [];
+    const steamVentTurns = (dungeon as any).steamVentTurns || [];
+
+    // Reset _mirrorShieldUsed on floor entry
+    player._mirrorShieldUsed = false;
 
     set({
       player,
@@ -1483,6 +1601,9 @@ export const useGameStore = create<GameStore>((set, get) => {
       extraTurnCost: 0,
       secretWalls: dungeon.secretWalls || [],
       floorDescriptionShown: false,
+      themedRooms,
+      steamVentTurns,
+      pendingForge: false,
     });
 
     // Clear remembered map from previous floor
@@ -1491,6 +1612,15 @@ export const useGameStore = create<GameStore>((set, get) => {
     addMessages([
       msg(`你来到了第 ${floor} 层 - ${biomeConfig.nameZh}`, MessageCategory.Story, '#ffcc44'),
     ]);
+
+    // OldMap: reveal a themed room
+    if (player.relics.includes(RelicId.OldMap) && themedRooms.length > 0) {
+      const revealed = rng.nextInt(0, themedRooms.length - 1);
+      const config = THEMED_ROOM_CONFIGS[themedRooms[revealed].theme];
+      if (config) {
+        addMessages([msg(`🗺️ 破旧地图显示了前方有：${config.nameZh}`, MessageCategory.Item, '#aaaaaa')]);
+      }
+    }
 
     // Floor atmosphere description
     const desc = FLOOR_DESCRIPTIONS[floor];
@@ -1501,6 +1631,20 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
 
     updateFOV();
+
+    // Output themed room narrative if player starts on one
+    const playerPos = { ...dungeon.playerStart };
+    const currentThemedRooms = themedRooms || [];
+    const themedRoomOnStart = currentThemedRooms.find((tr: any) =>
+      playerPos.x >= tr.room.x && playerPos.x < tr.room.x + tr.room.w &&
+      playerPos.y >= tr.room.y && playerPos.y < tr.room.y + tr.room.h
+    );
+    if (themedRoomOnStart) {
+      const config = THEMED_ROOM_CONFIGS[themedRoomOnStart.theme];
+      if (config && config.enterNarrative) {
+        addMessages([msg(config.enterNarrative, MessageCategory.Story, config.narrativeColor || '#ffcc44')]);
+      }
+    }
 
     // Update BGM for new floor
     const hasBoss = enemies.some(e => e.isBoss);
@@ -1674,6 +1818,95 @@ export const useGameStore = create<GameStore>((set, get) => {
           finalDamage = Math.floor(finalDamage * 0.7);
         }
 
+        // Relic: ComboRing - track combo and multiply damage on every 3rd hit
+        if (hasRelic(player, RelicId.ComboRing)) {
+          if (!player.comboAttackCount) player.comboAttackCount = 0;
+          player.comboAttackCount++;
+          if (player.comboAttackCount % 3 === 0) {
+            finalDamage = Math.floor(finalDamage * 1.5);
+            addMessages([msg('💍 连击！第三击伤害×1.5！', MessageCategory.Combat, '#ffcc44')]);
+          }
+        }
+
+        // Relic status proc (poisonGland/frostTouch/thunderMark)
+        const procStatus = rollRelicStatusProc(player, rng);
+        if (procStatus) {
+          const duration = procStatus === StatusEffectType.Freeze ? 2 : 3;
+          const dmg = procStatus === StatusEffectType.Poison ? 2 : 0;
+          enemy.statusEffects = [...enemy.statusEffects, { type: procStatus, duration, damage: dmg }];
+          const statusName = procStatus === StatusEffectType.Poison ? '中毒' : procStatus === StatusEffectType.Freeze ? '冻结' : '混乱';
+          addMessages([msg(`遗物效果！${enemy.name}${statusName}！`, MessageCategory.Combat, '#aa44ff')]);
+        }
+
+        // Relic: Apply ATK modifier from relics
+        const atkModifier = getRelicAtkModifier(player);
+        if (atkModifier !== 0) {
+          finalDamage = Math.floor(finalDamage * (1 + atkModifier));
+        }
+
+        // Check for elemental chain reaction
+        if (weaponElement !== Element.None && newHp > 0) {
+          const targetElements = getEnemyElementDebuffs(enemy);
+          const reaction = checkChainReactionWithMap(
+            weaponElement, targetElements, state.map, enemy.pos, state.turn, state.steamVentTurns
+          );
+          if (reaction) {
+            const attackerAtk = getEffectiveStats(player).str;
+            const chainResult = executeChainReaction(reaction, attackerAtk, enemy.pos, state.map, state.enemies, player, rng);
+            let chainDamage = chainResult.damage;
+
+            // Chaos core: double chain damage, but player takes 25%
+            if (hasRelic(player, RelicId.ChaosCore)) {
+              chainDamage *= 2;
+              const selfDmg = Math.floor(chainDamage * 0.25);
+              player.hp -= selfDmg;
+              addMessages([msg(`☄️ 混沌核心反噬！受到${selfDmg}点连锁伤害！`, MessageCategory.Combat, '#ff4444')]);
+            }
+
+            // Apply chain damage to affected enemies
+            for (const pos of chainResult.affectedPositions) {
+              const affectedEnemy = state.enemies.find(e => e.hp > 0 && e.pos.x === pos.x && e.pos.y === pos.y);
+              if (affectedEnemy) {
+                affectedEnemy.hp -= chainDamage;
+              }
+            }
+
+            // Apply status effects
+            for (const se of chainResult.statusEffects) {
+              const target = state.enemies.find(e => e.hp > 0 && e.pos.x === se.pos.x && e.pos.y === se.pos.y);
+              if (target) {
+                target.statusEffects = [...target.statusEffects, { type: se.type, duration: se.duration, damage: se.damage }];
+              }
+            }
+
+            // Apply map changes
+            if (chainResult.mapChanges.length > 0) {
+              const newMap = state.map.map(row => row.map(t => ({ ...t })));
+              const biome = getBiomeForFloor(state.currentFloor);
+              for (const mc of chainResult.mapChanges) {
+                if (mc.pos.y >= 0 && mc.pos.y < newMap.length && mc.pos.x >= 0 && mc.pos.x < newMap[0].length) {
+                  newMap[mc.pos.y][mc.pos.x] = createTile(mc.toType, biome);
+                }
+              }
+              set({ map: newMap });
+            }
+
+            addMessages([msg(chainResult.message, MessageCategory.Combat, '#ffcc44')]);
+
+            // FateWeaver: random buff on chain trigger
+            if (hasRelic(player, RelicId.FateWeaver)) {
+              const buffs = [
+                { stat: 'str', name: '力量' },
+                { stat: 'dex', name: '灵巧' },
+                { stat: 'int', name: '智慧' },
+              ];
+              const buff = rng.pick(buffs);
+              player.bonusStats = { ...player.bonusStats, [buff.stat]: player.bonusStats[buff.stat as keyof typeof player.bonusStats] + 3 };
+              addMessages([msg(`🕸️ 命运编织者赐予${buff.name}+3！`, MessageCategory.Item, '#aa44ff')]);
+            }
+          }
+        }
+
         const newHp = enemy.hp - finalDamage;
         const enemies = state.enemies.map(e => {
           if (e.id !== enemy.id) return e;
@@ -1770,13 +2003,20 @@ export const useGameStore = create<GameStore>((set, get) => {
 
         if (newHp <= 0) {
           const exp = getTalentModifiedExp(player, enemy.exp);
-          const goldDrop = getTalentModifiedGoldDrop(player, enemy.goldDrop);
+          const goldDrop = Math.floor(getTalentModifiedGoldDrop(player, enemy.goldDrop) * (1 + getRelicGoldModifier(player)));
           player.exp += exp;
           player.killCount++;
           if (enemy.isBoss) player.bossKillCount++;
           player.gold += goldDrop;
           messages.push(msg(`${enemy.name}被击败了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
           AudioManager.playSFX('coin');
+
+          // LifeSeed: first kill per floor heals 5% maxHp
+          if (hasRelic(player, RelicId.LifeSeed) && player.killCount === 1) {
+            const heal = Math.floor(player.maxHp * 0.05);
+            player.hp = Math.min(player.maxHp, player.hp + heal);
+            messages.push(msg(`🌱 生命种子回复了${heal}HP！`, MessageCategory.Item, '#44cc44'));
+          }
 
           // Place monument at boss position
           if (enemy.isBoss) {
@@ -1801,6 +2041,11 @@ export const useGameStore = create<GameStore>((set, get) => {
 
             // Trigger boss blessing selection
             set({ bossBlessingPending: true, lastBossDefId: enemy.defId });
+
+            // Boss relic drop
+            const bossRelicId = rollRandomRelic(player, rng, { common: 0, rare: 0.5, epic: 0.5 });
+            player.relics = [...player.relics, bossRelicId];
+            messages.push(msg(`✦ Boss掉落遗物：${RELIC_DEFS[bossRelicId].icon} ${RELIC_DEFS[bossRelicId].name}`, MessageCategory.Item, '#ffcc44'));
           }
 
           // Elite Explosive: Death blast dealing ATK×1.5 in 2-tile radius
@@ -1831,6 +2076,16 @@ export const useGameStore = create<GameStore>((set, get) => {
             if (player.hp <= 0) {
               handlePlayerDeath(player, enemies, messages, `被${enemy.name}爆裂`);
               return;
+            }
+          }
+
+          // Elite relic drop
+          if (enemy.isElite) {
+            const dropChance = hasRelic(player, RelicId.LuckyCoin) ? 1.0 : 0.2;
+            if (rng.chance(dropChance)) {
+              const relicId = rollRandomRelic(player, rng, { common: 0.2, rare: 0.8, epic: 0 });
+              player.relics = [...player.relics, relicId];
+              messages.push(msg(`✦ 精英掉落遗物：${RELIC_DEFS[relicId].icon} ${RELIC_DEFS[relicId].name}`, MessageCategory.Item, '#ffcc44'));
             }
           }
 
@@ -2204,6 +2459,115 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (tile.type === TileType.Monument) {
         addMessages([msg('纪念碑上刻着已逝Boss的名字。', MessageCategory.Story, '#ffd700')]);
       }
+
+      // Forge: Enhancement UI
+      if (tile.type === TileType.Forge) {
+        // Check if any equipment can be enhanced
+        const slots = Object.values(EquipmentSlot);
+        const slotNames: Record<EquipmentSlot, string> = {
+          [EquipmentSlot.Weapon]: '武器',
+          [EquipmentSlot.Armor]: '护甲',
+          [EquipmentSlot.Ring]: '戒指',
+          [EquipmentSlot.Amulet]: '护符',
+        };
+        let canEnhance = false;
+        for (const slot of slots) {
+          const item = player.equipment[slot];
+          if (item && 'enhanceLevel' in item && (item as any).enhanceLevel < 3) {
+            canEnhance = true;
+            break;
+          }
+        }
+        if (canEnhance) {
+          set({ pendingForge: true, phase: GamePhase.Inventory });
+          addMessages([msg('你可以在这里强化装备。费用根据强化等级而定。', MessageCategory.System, '#ffcc44')]);
+        } else {
+          addMessages([msg('你没有可强化的装备。', MessageCategory.System, '#888888')]);
+        }
+      }
+
+      // WeaponRack: Free random weapon
+      if (tile.type === TileType.WeaponRack) {
+        const newWeapon = createRandomItem(state.currentFloor, rng, false) as WeaponItem;
+        if (newWeapon && newWeapon.type === ItemType.Weapon) {
+          const floorItem: FloorItem = { item: newWeapon, pos: { x: nx, y: ny } };
+          // Convert tile to Floor after use
+          const newMap = state.map.map(row => row.map(t => ({ ...t })));
+          const biome = getBiomeForFloor(state.currentFloor);
+          newMap[ny][nx] = createTile(TileType.Floor, biome);
+          set({ items: [...state.items, floorItem], map: newMap });
+          addMessages([msg(`武器架上有一件${getItemName(newWeapon)}！`, MessageCategory.Item, '#ffcc44')]);
+        } else {
+          // Fallback: create a basic weapon
+          const basicWeapon: WeaponItem = {
+            id: genId(),
+            type: ItemType.Weapon,
+            name: '普通铁剑',
+            rarity: Rarity.Common,
+            damage: Math.floor(state.currentFloor * 1.5) + 3,
+            element: Element.None,
+            identified: true,
+            cursed: false,
+            value: 10,
+          };
+          const floorItem: FloorItem = { item: basicWeapon, pos: { x: nx, y: ny } };
+          const newMap = state.map.map(row => row.map(t => ({ ...t })));
+          const biome = getBiomeForFloor(state.currentFloor);
+          newMap[ny][nx] = createTile(TileType.Floor, biome);
+          set({ items: [...state.items, floorItem], map: newMap });
+          addMessages([msg('武器架上有一把旧剑！', MessageCategory.Item, '#ccaa88')]);
+        }
+      }
+
+      // SpikeTrap: Deal damage to player
+      if (tile.type === TileType.SpikeTrap) {
+        const trapDmg = 8;
+        player.hp -= trapDmg;
+        addMessages([msg(`尖刺陷阱！受到${trapDmg}点伤害！`, MessageCategory.Combat, '#ff4444')]);
+        flashScreen('#ff000033');
+        AudioManager.playSFX('hit');
+      }
+    }
+
+    // Check if enemies are on spike traps
+    const enemies = state.enemies.map(e => {
+      if (e.hp > 0) {
+        const tile = state.map[e.pos.y]?.[e.pos.x];
+        if (tile && tile.type === TileType.SpikeTrap) {
+          const trapDmg = 8;
+          return { ...e, hp: e.hp - trapDmg };
+        }
+      }
+      return e;
+    });
+    if (enemies.some(e => e.hp <= 0 && e.id !== state.enemies.find(en => en.id === e.id)?.hp)) {
+      // Enemy died from spike trap
+      const deadEnemies = enemies.filter(e => e.hp <= 0);
+      for (const dead of deadEnemies) {
+        const original = state.enemies.find(e => e.id === dead.id);
+        if (original && original.hp > 0) {
+          const exp = getTalentModifiedExp(player, original.exp);
+          const goldDrop = Math.floor(getTalentModifiedGoldDrop(player, original.goldDrop) * (1 + getRelicGoldModifier(player)));
+          player.exp += exp;
+          player.killCount++;
+          player.gold += goldDrop;
+          addMessages([msg(`${dead.name}踩中尖刺陷阱死亡！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44')]);
+          if (original.isBoss) {
+            player.bossKillCount++;
+            // Place monument at boss position (if boss died to trap)
+            const bossPos = original.pos;
+            if (bossPos.y >= 0 && bossPos.y < state.map.length && bossPos.x >= 0 && bossPos.x < state.map[0].length) {
+              const newMap = state.map.map(row => row.map(t => ({ ...t })));
+              newMap[bossPos.y][bossPos.x] = { type: TileType.Monument, char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true, visible: false, remembered: false };
+              set({ map: newMap });
+              set({ bossBlessingPending: true, lastBossDefId: original.defId });
+            }
+          }
+        }
+      }
+      set({ player, enemies });
+    }
+
 
       // Check for shop
       if (tile.type === TileType.Shop && state.shopItems.length > 0) {
@@ -3120,7 +3484,7 @@ export const useGameStore = create<GameStore>((set, get) => {
                 player.inventory = [...player.inventory, prize];
                 messages.push(msg(`赢了！获得了${getItemName(prize)}！`, MessageCategory.Item, '#ffcc44'));
               } else {
-                player.gold += 40;
+                player.gold += Math.floor(40 * (1 + getRelicGoldModifier(player)));
                 messages.push(msg('赢了！获得40金币！', MessageCategory.Item, '#ffcc44'));
               }
             } else {
@@ -3153,7 +3517,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           const foodItem = player.inventory.find(i => i.type === ItemType.Food);
           if (foodItem) {
             player.inventory = player.inventory.filter(i => i.id !== foodItem.id);
-            player.gold += 15;
+            player.gold += Math.floor(15 * (1 + getRelicGoldModifier(player)));
             messages.push(msg('你帮助了旅人，他给了你15金币作为报酬！', MessageCategory.Item, '#ffcc44'));
           } else {
             messages.push(msg('你没有食物可以给他...', MessageCategory.System, '#888888'));
@@ -3161,7 +3525,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           break;
         }
         case 'traveler_rob':
-          player.gold += 8;
+          player.gold += Math.floor(8 * (1 + getRelicGoldModifier(player)));
           messages.push(msg('你搜刮了8金币...良心有些不安', MessageCategory.Item, '#aa8844'));
           break;
         case 'traveler_leave':
@@ -3202,7 +3566,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               player.inventory = [...player.inventory, loot];
               messages.push(msg(`宝箱中有${getItemName(loot)}！`, MessageCategory.Item, '#ffcc44'));
             } else {
-              player.gold += 10;
+              player.gold += Math.floor(10 * (1 + getRelicGoldModifier(player)));
               messages.push(msg('宝箱中有10金币！', MessageCategory.Item, '#ffcc44'));
             }
           }
@@ -3219,6 +3583,406 @@ export const useGameStore = create<GameStore>((set, get) => {
         case 'chest_skip':
           messages.push(msg('你放弃了宝箱', MessageCategory.System, '#888888'));
           break;
+
+        // === Abyss Merchant ===
+        case 'abyssMerchant_buyRelic': {
+          if (player.gold >= 200) {
+            player.gold -= 200;
+            const relicId = rollRandomRelic(player, rng, { common: 0, rare: 1, epic: 0 });
+            player.relics = [...player.relics, relicId];
+            messages.push(msg(`花费200金获得了遗物：${RELIC_DEFS[relicId].icon} ${RELIC_DEFS[relicId].name}！`, MessageCategory.Item, '#ffcc44'));
+          } else {
+            messages.push(msg('金币不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'abyssMerchant_tradeHpForEpic': {
+          const hpCost = Math.floor(player.hp * 0.3);
+          if (player.hp > hpCost) {
+            player.hp -= hpCost;
+            const item = createRandomItem(state.currentFloor, rng, false, 0);
+            if (item.rarity === Rarity.Common || item.rarity === Rarity.Good) {
+              // Force rare+ quality
+              const forcedItem = createRandomItem(state.currentFloor, rng, false, 0);
+              player.inventory = [...player.inventory, forcedItem];
+              messages.push(msg(`献祭了${hpCost}HP，获得了${getItemName(forcedItem)}！`, MessageCategory.Item, '#ffcc44'));
+            } else {
+              player.inventory = [...player.inventory, item];
+              messages.push(msg(`献祭了${hpCost}HP，获得了${getItemName(item)}！`, MessageCategory.Item, '#ffcc44'));
+            }
+          } else {
+            messages.push(msg('HP不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'abyssMerchant_enhanceForMp': {
+          const mpCost = Math.floor(player.maxMp * 0.5);
+          if (player.mp >= mpCost) {
+            player.mp -= mpCost;
+            // Enhance one equipped weapon to +2
+            const weapon = player.equipment[EquipmentSlot.Weapon] as WeaponItem | null;
+            if (weapon && (weapon.enhanceLevel ?? 0) < 2) {
+              const enhanced = { ...weapon, enhanceLevel: 2 as 0|1|2|3, damage: Math.floor(weapon.damage * 1.2) };
+              player.equipment = { ...player.equipment, [EquipmentSlot.Weapon]: enhanced };
+              messages.push(msg(`献祭了${mpCost}MP，武器强化至+2！`, MessageCategory.Item, '#4488ff'));
+            } else {
+              messages.push(msg('没有可强化的武器！', MessageCategory.System, '#ff4444'));
+            }
+          } else {
+            messages.push(msg('MP不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+
+        // === Soul Furnace ===
+        case 'soulFurnace_equipForRelic': {
+          const equippable = Object.values(player.equipment).filter(e => e !== null);
+          if (equippable.length > 0) {
+            const sacrificed = rng.pick(equippable as Item[]);
+            const slot = Object.keys(player.equipment).find(s => player.equipment[s as EquipmentSlot]?.id === sacrificed.id);
+            if (slot) {
+              player.equipment = { ...player.equipment, [slot]: null };
+              player.gold += Math.floor(sacrificed.value * 0.5);
+              const relicId = rollRandomRelic(player, rng, { common: 0.3, rare: 0.6, epic: 0.1 });
+              player.relics = [...player.relics, relicId];
+              messages.push(msg(`投入了${getItemName(sacrificed)}，获得了遗物：${RELIC_DEFS[relicId].icon} ${RELIC_DEFS[relicId].name}！`, MessageCategory.Item, '#ffcc44'));
+            }
+          } else {
+            messages.push(msg('没有可献祭的装备！', MessageCategory.System, '#888888'));
+          }
+          break;
+        }
+        case 'soulFurnace_hpForAtk': {
+          const hpCost = Math.floor(player.maxHp * 0.3);
+          if (player.hp > hpCost) {
+            player.hp -= hpCost;
+            player.bonusStats = { ...player.bonusStats, str: player.bonusStats.str + 2 };
+            messages.push(msg(`献祭了${hpCost}HP，力量永久+2！`, MessageCategory.Item, '#ff8844'));
+          } else {
+            messages.push(msg('HP不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'soulFurnace_mpForMaxMp': {
+          if (player.mp > 0) {
+            player.mp = 0;
+            player.maxMp += 10;
+            messages.push(msg('献祭了所有MP，最大MP永久+10！', MessageCategory.Item, '#4488ff'));
+          } else {
+            messages.push(msg('MP不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+
+        // === Cursed Chest ===
+        case 'cursedChest_open': {
+          const item = createRandomItem(state.currentFloor, rng, false, 0);
+          // Force rare+ quality
+          player.inventory = [...player.inventory, item];
+          // Random debuff
+          const debuffs = [StatusEffectType.Poison, StatusEffectType.Burn, StatusEffectType.Bleed, StatusEffectType.Confusion];
+          const debuff = rng.pick(debuffs);
+          player.statusEffects = [...player.statusEffects, { type: debuff, duration: 3, damage: 2 }];
+          const debuffName = debuff === StatusEffectType.Poison ? '中毒' : debuff === StatusEffectType.Burn ? '燃烧' : debuff === StatusEffectType.Bleed ? '流血' : '混乱';
+          messages.push(msg(`获得了${getItemName(item)}，但受到了${debuffName}！`, MessageCategory.Item, '#ffcc44'));
+          break;
+        }
+        case 'cursedChest_breakRune': {
+          // Already checked INT condition in EventModal
+          const item = createRandomItem(state.currentFloor, rng, false, 0);
+          player.inventory = [...player.inventory, item];
+          // Halved debuff
+          const debuffs = [StatusEffectType.Poison, StatusEffectType.Burn];
+          const debuff = rng.pick(debuffs);
+          player.statusEffects = [...player.statusEffects, { type: debuff, duration: 1, damage: 1 }];
+          messages.push(msg(`破坏了符文！获得了${getItemName(item)}，仅有轻微副作用！`, MessageCategory.Item, '#44cc44'));
+          break;
+        }
+
+        // === Fate Crossroad ===
+        case 'fateCrossroad_element': {
+          const elementRelics = [RelicId.PoisonGland, RelicId.FlameHeart, RelicId.FrostTouch, RelicId.ThunderMark];
+          const available = elementRelics.filter(r => !player.relics.includes(r));
+          if (available.length > 0) {
+            const relicId = rng.pick(available);
+            player.relics = [...player.relics, relicId];
+            messages.push(msg(`元素之路！获得遗物：${RELIC_DEFS[relicId].icon} ${RELIC_DEFS[relicId].name}`, MessageCategory.Item, '#ffcc44'));
+          }
+          // Also give element weapon
+          const weapon = createRandomItem(state.currentFloor, rng, false) as WeaponItem;
+          if (weapon.type === ItemType.Weapon) {
+            player.inventory = [...player.inventory, weapon];
+            messages.push(msg(`获得了${getItemName(weapon)}！`, MessageCategory.Item, '#4488ff'));
+          }
+          break;
+        }
+        case 'fateCrossroad_power': {
+          player.bonusStats = { ...player.bonusStats, str: player.bonusStats.str + 5 };
+          player.bonusStats = { ...player.bonusStats, dex: player.bonusStats.dex - 2 };
+          messages.push(msg('力量之路！STR+5，DEX-2！', MessageCategory.Item, '#ff8844'));
+          break;
+        }
+        case 'fateCrossroad_wisdom': {
+          player.bonusStats = { ...player.bonusStats, int: player.bonusStats.int + 3 };
+          player.mp = Math.min(player.maxMp, player.mp + 20);
+          messages.push(msg('智慧之路！INT+3，MP+20！', MessageCategory.Item, '#4488ff'));
+          break;
+        }
+
+        // === Mystery Rune ===
+        case 'mysteryRune_fire': {
+          player.statusEffects = [...player.statusEffects, { type: StatusEffectType.FireResist, duration: 5, damage: 0 }];
+          // Set 3x3 area on fire (convert floor tiles around event position)
+          messages.push(msg('火符文激活！获得5回合火焰免疫，周围起火！', MessageCategory.Item, '#ff6622'));
+          break;
+        }
+        case 'mysteryRune_ice': {
+          player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 5, damage: 5 }];
+          messages.push(msg('冰符文激活！获得5回合防御+5，周围结冰！', MessageCategory.Item, '#44aaff'));
+          break;
+        }
+        case 'mysteryRune_both': {
+          player.statusEffects = [...player.statusEffects,
+            { type: StatusEffectType.FireResist, duration: 5, damage: 0 },
+            { type: StatusEffectType.DefenseUp, duration: 5, damage: 5 }];
+          if (!player.relics.includes(RelicId.ElementResonance)) {
+            player.relics = [...player.relics, RelicId.ElementResonance];
+            messages.push(msg('双重符文！获得元素共鸣遗物！', MessageCategory.Item, '#aa44ff'));
+          }
+          break;
+        }
+
+        // === Rift Heart ===
+        case 'riftHeart_accept': {
+          if (!player.relics.includes(RelicId.VoidHeart)) {
+            player.relics = [...player.relics, RelicId.VoidHeart];
+            const hpLoss = Math.floor(player.maxHp * 0.15);
+            player.maxHp -= hpLoss;
+            player.hp = Math.min(player.hp, player.maxHp);
+            messages.push(msg(`接受了虚空！获得虚空之心遗物，最大HP-${hpLoss}！`, MessageCategory.Item, '#aa44ff'));
+          }
+          break;
+        }
+        case 'riftHeart_refuse': {
+          const heal = Math.floor(player.maxHp * 0.3);
+          player.hp = Math.min(player.maxHp, player.hp + heal);
+          player.gold += 50;
+          messages.push(msg(`拒绝了虚空，回复${heal}HP，获得50金！`, MessageCategory.Item, '#44cc44'));
+          break;
+        }
+        case 'riftHeart_master': {
+          if (!player.relics.includes(RelicId.VoidHeart)) {
+            player.relics = [...player.relics, RelicId.VoidHeart];
+            messages.push(msg('驾驭了虚空！获得虚空之心遗物！', MessageCategory.Item, '#ffcc44'));
+          }
+          break;
+        }
+
+        // === Abyss Gamble ===
+        case 'abyssGamble_big': {
+          if (player.gold >= 100) {
+            player.gold -= 100;
+            if (rng.chance(0.6)) {
+              player.gold += 300;
+              const relicId = rollRandomRelic(player, rng, { common: 0.5, rare: 0.5, epic: 0 });
+              player.relics = [...player.relics, relicId];
+              messages.push(msg(`赢了！获得300金和遗物${RELIC_DEFS[relicId].icon}！`, MessageCategory.Item, '#ffcc44'));
+            } else {
+              messages.push(msg('输了！100金币打了水漂…', MessageCategory.System, '#ff4444'));
+            }
+          } else {
+            messages.push(msg('金币不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'abyssGamble_hp': {
+          if (player.hp > Math.floor(player.maxHp * 0.3)) {
+            if (rng.chance(0.5)) {
+              player.hp = player.maxHp;
+              player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 5, damage: 10 }];
+              messages.push(msg('赢了！满血+防御提升5回合！', MessageCategory.Item, '#44cc44'));
+            } else {
+              player.hp = 1;
+              messages.push(msg('输了！HP降至1！', MessageCategory.Combat, '#ff4444'));
+            }
+          } else {
+            messages.push(msg('HP不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'abyssGamble_allIn': {
+          if (player.gold >= 500) {
+            if (rng.chance(0.4)) {
+              player.relics = [...player.relics, RelicId.ChaosCore];
+              messages.push(msg('🎉 大赢！获得混沌核心遗物！', MessageCategory.Item, '#ffcc44'));
+            } else {
+              player.gold = Math.floor(player.gold / 2);
+              const debuffs = [StatusEffectType.Poison, StatusEffectType.Burn];
+              player.statusEffects = [...player.statusEffects, { type: rng.pick(debuffs), duration: 3, damage: 2 }];
+              messages.push(msg('输了！失去一半金币+debuff！', MessageCategory.Combat, '#ff4444'));
+            }
+          } else {
+            messages.push(msg('金币不足500！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+
+        // === Unstable Portal ===
+        case 'unstablePortal_enter': {
+          // Teleport to random themed room + get relic
+          const themedRoom = state.themedRooms.length > 0 ? rng.pick(state.themedRooms) : null;
+          if (themedRoom) {
+            player.pos = { x: themedRoom.room.centerX, y: themedRoom.room.centerY };
+            const config = THEMED_ROOM_CONFIGS[themedRoom.theme];
+            const relicId = rollRandomRelic(player, rng, config.relicRarityWeights, config.elementAffinity);
+            player.relics = [...player.relics, relicId];
+            messages.push(msg(`传送至${config.nameZh}！获得遗物${RELIC_DEFS[relicId].icon}！`, MessageCategory.Item, '#cc44ff'));
+          } else {
+            messages.push(msg('传送门无法连接…', MessageCategory.System, '#888888'));
+          }
+          break;
+        }
+        case 'unstablePortal_destroy': {
+          player.gold += 50;
+          const item = createRandomItem(state.currentFloor, rng, false);
+          player.inventory = [...player.inventory, item];
+          messages.push(msg(`破坏了传送门，获得50金和${getItemName(item)}！`, MessageCategory.Item, '#ffcc44'));
+          break;
+        }
+        case 'unstablePortal_stabilize': {
+          // Already checked MP condition in EventModal
+          player.mp -= 30;
+          // Give rare+ item
+          const item = createRandomItem(state.currentFloor, rng, false, 2);
+          player.inventory = [...player.inventory, item];
+          messages.push(msg(`稳定传送门，发现了隐藏宝物：${getItemName(item)}！`, MessageCategory.Item, '#ffcc44'));
+          break;
+        }
+
+        // === Blood Altar ===
+        case 'bloodAltar_hp': {
+          const hpCost = Math.floor(player.maxHp * 0.2);
+          if (player.hp > hpCost) {
+            player.hp -= hpCost;
+            player.bonusStats = { ...player.bonusStats, str: player.bonusStats.str + 3 };
+            // Mark as temporary (floor-only) - for simplicity, we'll just apply it
+            messages.push(msg(`献祭了${hpCost}HP，力量+3（本层有效）！`, MessageCategory.Item, '#ff4444'));
+          } else {
+            messages.push(msg('HP不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'bloodAltar_mp': {
+          if (player.mp > 0) {
+            player.mp = 0;
+            player.bonusStats = { ...player.bonusStats, int: player.bonusStats.int + 3 };
+            messages.push(msg('献祭了所有MP，智慧+3（本层有效）！', MessageCategory.Item, '#4488ff'));
+          } else {
+            messages.push(msg('MP不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'bloodAltar_relic': {
+          if (player.relics.length >= 2) {
+            const removed = rng.pick(player.relics);
+            player.relics = player.relics.filter(r => r !== removed);
+            messages.push(msg(`献祭了${RELIC_DEFS[removed].name}，剩余遗物效果+50%本层！`, MessageCategory.Item, '#aa44ff'));
+          } else {
+            messages.push(msg('遗物不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+
+        // === Ancient Mural ===
+        case 'ancientMural_study': {
+          player.bonusStats = { ...player.bonusStats, str: player.bonusStats.str + 1, dex: player.bonusStats.dex + 1, int: player.bonusStats.int + 1, vit: player.bonusStats.vit + 1 };
+          messages.push(msg('仔细研究壁画，全属性+1！但壁画守卫出现了！', MessageCategory.Item, '#ffcc44'));
+          // Spawn 2 buffed enemies nearby - simplified: just add a message
+          break;
+        }
+        case 'ancientMural_copy': {
+          const stat = rng.pick(['str', 'dex', 'int', 'vit'] as const);
+          player.bonusStats = { ...player.bonusStats, [stat]: player.bonusStats[stat] + 1 };
+          const statName = stat === 'str' ? '力量' : stat === 'dex' ? '灵巧' : stat === 'int' ? '智慧' : '活力';
+          messages.push(msg(`临摹壁画，${statName}永久+1！`, MessageCategory.Item, '#ffcc44'));
+          break;
+        }
+
+        // === Lost Traveler ===
+        case 'lostTraveler_help': {
+          const foodItem = player.inventory.find(i => i.type === ItemType.Food || i.type === ItemType.Potion);
+          if (foodItem) {
+            player.inventory = player.inventory.filter(i => i.id !== foodItem.id);
+            // Reveal a secret wall
+            const secretWalls = state.secretWalls;
+            if (secretWalls.length > 0) {
+              const revealed = rng.pick(secretWalls);
+              messages.push(msg(`帮助了旅人！他告诉你附近有暗墙(${revealed.x},${revealed.y})！`, MessageCategory.Item, '#44cc44'));
+            } else {
+              messages.push(msg('帮助了旅人，但他没有更多信息…', MessageCategory.Item, '#44cc44'));
+            }
+          } else {
+            messages.push(msg('没有食物或药水可以给他！', MessageCategory.System, '#888888'));
+          }
+          break;
+        }
+        case 'lostTraveler_rob': {
+          const gold = rng.nextInt(100, 200);
+          player.gold += gold;
+          player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Bleed, duration: 3, damage: 3 }];
+          messages.push(msg(`抢劫了${gold}金，但内疚感让你心神不宁…`, MessageCategory.Item, '#aa8844'));
+          break;
+        }
+        case 'lostTraveler_talk': {
+          const secretWalls = state.secretWalls;
+          if (secretWalls.length > 0) {
+            const revealed = rng.pick(secretWalls);
+            messages.push(msg(`交谈后，旅人告诉你暗墙位置(${revealed.x},${revealed.y})，并透露了关于下层的线索…`, MessageCategory.Item, '#4488ff'));
+          } else {
+            messages.push(msg('旅人告诉你关于下层的线索…', MessageCategory.Item, '#4488ff'));
+          }
+          break;
+        }
+
+        // === Echo Well ===
+        case 'echoWell_listen': {
+          // Hint about next floor
+          const nextFloor = state.currentFloor + 1;
+          const nextBiome = getBiomeForFloor(nextFloor);
+          const biomeName = nextBiome === 'stoneDungeon' ? '石窟' : nextBiome === 'crystalCavern' ? '水晶洞' : nextBiome === 'ancientCrypt' ? '古墓' : nextBiome === 'lavaCore' ? '熔岩' : '虚空';
+          messages.push(msg(`井中回声：下一层是${biomeName}…`, MessageCategory.Story, '#aa44ff'));
+          const debuffs = [StatusEffectType.Poison, StatusEffectType.Burn, StatusEffectType.Confusion];
+          player.statusEffects = [...player.statusEffects, { type: rng.pick(debuffs), duration: 2, damage: 1 }];
+          break;
+        }
+        case 'echoWell_gold': {
+          if (player.gold >= 100) {
+            player.gold -= 100;
+            player.statusEffects = player.statusEffects.filter(e =>
+              e.type !== StatusEffectType.Poison && e.type !== StatusEffectType.Burn &&
+              e.type !== StatusEffectType.Freeze && e.type !== StatusEffectType.Bleed &&
+              e.type !== StatusEffectType.Confusion
+            );
+            messages.push(msg('投入100金，所有debuff被净化！', MessageCategory.Item, '#44cc44'));
+          } else {
+            messages.push(msg('金币不足！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
+        case 'echoWell_relic': {
+          if (player.relics.length >= 3) {
+            const removed = rng.pick(player.relics);
+            player.relics = player.relics.filter(r => r !== removed);
+            const r1 = rollRandomRelic(player, rng, { common: 0.3, rare: 0.5, epic: 0.2 });
+            player.relics = [...player.relics, r1];
+            const r2 = rollRandomRelic(player, rng, { common: 0.3, rare: 0.5, epic: 0.2 });
+            player.relics = [...player.relics, r2];
+            messages.push(msg(`献祭了${RELIC_DEFS[removed].name}，获得${RELIC_DEFS[r1].name}和${RELIC_DEFS[r2].name}！`, MessageCategory.Item, '#ffcc44'));
+          } else {
+            messages.push(msg('遗物不足3个！', MessageCategory.System, '#ff4444'));
+          }
+          break;
+        }
       }
 
       set({ player, currentEvent: null, phase: GamePhase.Playing });
@@ -3251,6 +4015,76 @@ export const useGameStore = create<GameStore>((set, get) => {
       addMessages([msg('获得了Boss祝福！', MessageCategory.System, '#ffd700')]);
       set({ player, bossBlessingPending, lastBossDefId });
       updateFOV();
+    },
+
+    enhanceEquipment: (slot: EquipmentSlot) => {
+      const state = get();
+      if (!state.player || !state.pendingForge) return;
+      if (state.phase !== GamePhase.Inventory) return;
+
+      const player = { ...state.player };
+      const item = player.equipment[slot];
+      if (!item || !('enhanceLevel' in item)) {
+        addMessages([msg('该装备无法强化', MessageCategory.System, '#ff4444')]);
+        set({ pendingForge: false, phase: GamePhase.Playing });
+        return;
+      }
+
+      const enhanceLevel = (item as any).enhanceLevel || 0;
+      if (enhanceLevel >= 3) {
+        addMessages([msg('该装备已达到最大强化等级', MessageCategory.System, '#ff4444')]);
+        set({ pendingForge: false, phase: GamePhase.Playing });
+        return;
+      }
+
+      const baseCost = ENHANCE_COSTS[enhanceLevel];
+      const costModifier = getRelicForgeCostModifier(player);
+      const cost = Math.floor(baseCost * costModifier);
+
+      // VoidForge (floor >= 21) → half price
+      const finalCost = state.currentFloor >= 21 ? Math.floor(cost / 2) : cost;
+
+      if (player.gold < finalCost) {
+        addMessages([msg(`金币不足！需要 ${finalCost} 金币`, MessageCategory.System, '#ff4444')]);
+        return;
+      }
+
+      const rng = new SeededRandom(state.seed + state.turn * 29);
+      const successRate = ENHANCE_SUCCESS_RATES[enhanceLevel];
+      const success = rng.next() < successRate;
+
+      player.gold -= finalCost;
+
+      if (success) {
+        const enhanced = { ...item, enhanceLevel: enhanceLevel + 1 } as any;
+        if (enhanced.type === ItemType.Weapon) {
+          enhanced.damage = Math.floor(enhanced.damage * ENHANCE_ATK_MULT);
+        } else if (enhanced.type === ItemType.Armor) {
+          enhanced.defense = Math.floor(enhanced.defense * ENHANCE_DEF_MULT);
+        }
+
+        // VoidForge success: 10% chance to curse item
+        if (state.currentFloor >= 21 && rng.chance(0.1)) {
+          enhanced.cursed = true;
+          enhanced.name = `诅咒${enhanced.name.replace('诅咒', '')}`;
+          addMessages([msg('虚空之力诅咒了你的装备！', MessageCategory.Combat, '#8844ff')]);
+        }
+
+        // LavaForge (floor 16-20) success: add Fire element StatusProc if no special effect
+        if (state.currentFloor >= 16 && state.currentFloor <= 20 && !enhanced.specialEffect) {
+          enhanced.specialEffect = EquipmentEffect.StatusProc;
+          enhanced.element = Element.Fire;
+          addMessages([msg('熔岩之火为你的武器注入了火焰之力！', MessageCategory.Item, '#ff6644')]);
+        }
+
+        player.equipment = { ...player.equipment, [slot]: enhanced };
+        addMessages([msg(`强化成功！${getItemName(enhanced)} 升级到 +${enhanceLevel + 1}`, MessageCategory.Item, '#44cc44')]);
+        AudioManager.playSFX('levelup');
+      } else {
+        addMessages([msg(`强化失败！花费了 ${finalCost} 金币`, MessageCategory.Item, '#ff4444')]);
+      }
+
+      set({ player, pendingForge: false, phase: GamePhase.Playing });
     },
 
     restartGame: () => {
