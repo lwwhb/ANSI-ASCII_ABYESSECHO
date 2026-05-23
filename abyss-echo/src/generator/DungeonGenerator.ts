@@ -7,6 +7,7 @@ import {
   ENEMIES_PER_FLOOR_BASE, ENEMIES_PER_FLOOR_GROWTH,
   BOSS_DEFS, BOSS_ARENA_OBJECTS, SPECIAL_ROOM_CHANCES,
 } from '../constants';
+import { THEMED_ROOM_CONFIGS, THEMES_BY_BIOME } from '../constants/themedRooms';
 import { generateStoneDungeon } from './StoneDungeonGenerator';
 import { generateCrystalCave } from './CrystalCaveGenerator';
 import { generateCrypt } from './CryptGenerator';
@@ -48,6 +49,7 @@ export interface DungeonData {
   secretWalls: Position[];
   bossArenaData?: BossArenaData;
   themedRooms: { room: Room; theme: RoomTheme }[];
+  steamVentTurns: { x: number; y: number; spawnTurn: number }[];
 }
 
 // Export shared utility functions for use by biome-specific generators
@@ -628,4 +630,92 @@ export function markBossRoom(map: Tile[][], bossRoom: Room, biome: Biome): void 
       }
     }
   }
+}
+
+// ============================================================
+// Themed Rooms Support
+// ============================================================
+
+export function placeThemedRooms(
+  map: Tile[][],
+  rooms: Room[],
+  biome: Biome,
+  rng: SeededRandom,
+  reservedRooms: Room[],
+): {
+  themedRooms: { room: Room; theme: RoomTheme }[];
+  steamVentTurns: { x: number; y: number; spawnTurn: number }[];
+} {
+  const themedRooms: { room: Room; theme: RoomTheme }[] = [];
+  const steamVentTurns: { x: number; y: number; spawnTurn: number }[] = [];
+
+  // Get available themes for this biome
+  const availableThemes = THEMES_BY_BIOME[biome];
+  if (!availableThemes || availableThemes.length === 0) {
+    return { themedRooms, steamVentTurns };
+  }
+
+  // Filter eligible rooms (not reserved, minimum size 5×5)
+  const eligibleRooms = rooms.filter(room =>
+    !reservedRooms.includes(room) &&
+    room.w >= 5 &&
+    room.h >= 5
+  );
+
+  if (eligibleRooms.length === 0) {
+    return { themedRooms, steamVentTurns };
+  }
+
+  // Randomly select 3-5 rooms to become themed
+  const numThemedRooms = rng.nextInt(3, Math.min(5, eligibleRooms.length));
+  const shuffledRooms = [...eligibleRooms].sort(() => rng.next() - 0.5);
+  const selectedRooms = shuffledRooms.slice(0, numThemedRooms);
+
+  const mapHeight = map.length;
+  const mapWidth = map[0]?.length || 0;
+
+  // For each selected room, assign a theme and place terrain
+  for (const room of selectedRooms) {
+    // Pick a random theme from available themes
+    const theme = rng.pick(availableThemes) as RoomTheme;
+    const themeConfig = THEMED_ROOM_CONFIGS[theme];
+
+    if (!themeConfig) continue;
+
+    // Place terrain from the theme's template
+    for (const terrain of themeConfig.terrainTemplate) {
+      const targetX = room.centerX + terrain.offsetX;
+      const targetY = room.centerY + terrain.offsetY;
+
+      // Check bounds
+      if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight) {
+        const defaults = NEW_TILE_DEFAULTS[terrain.type];
+        if (defaults) {
+          // Place the terrain tile
+          map[targetY][targetX] = makeTile(
+            terrain.type,
+            defaults.char,
+            defaults.fg,
+            defaults.bg,
+            defaults.walkable,
+            defaults.transparent
+          );
+
+          // Track SteamVent positions for the steamVentTurns field
+          if (terrain.type === TileType.SteamVent) {
+            steamVentTurns.push({
+              x: targetX,
+              y: targetY,
+              spawnTurn: 0, // Will be relative to the turn when the floor is entered
+            });
+          }
+        }
+      }
+    }
+
+    // Record the themed room
+    themedRooms.push({ room, theme });
+  }
+
+  return { themedRooms, steamVentTurns };
 }

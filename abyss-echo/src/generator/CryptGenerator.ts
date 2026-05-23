@@ -8,6 +8,7 @@ import {
   carveRoom, addEnvironment,
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
+  placeThemedRooms,
 } from './DungeonGenerator';
 
 function carveWideCorridorReal(map: import('../types').Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome): void {
@@ -196,6 +197,25 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
   // Elite + special rooms + secret walls
   const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
 
+  // Themed rooms (excluding start, boss, shop, event, elite rooms)
+  const reservedRooms: Room[] = [startRoom];
+  if (stairsRoom) reservedRooms.push(stairsRoom);
+  if (boss?.bossRoom) reservedRooms.push(boss.bossRoom);
+  if (eliteRoom) reservedRooms.push(eliteRoom);
+  if (shopPos) {
+    const shopRoom = rooms.find(r => shopPos.x >= r.x && shopPos.x < r.x + r.w && shopPos.y >= r.y && shopPos.y < r.y + r.h);
+    if (shopRoom) reservedRooms.push(shopRoom);
+  }
+  if (eventPos) {
+    const eventRoom = rooms.find(r => eventPos.x >= r.x && eventPos.x < r.x + r.w && eventPos.y >= r.y && eventPos.y < r.y + r.h);
+    if (eventRoom) reservedRooms.push(eventRoom);
+  }
+  specialRooms.forEach(sr => {
+    if (!reservedRooms.includes(sr.room)) reservedRooms.push(sr.room);
+  });
+
+  const { themedRooms, steamVentTurns } = placeThemedRooms(map, rooms, biome, rng, reservedRooms);
+
   return {
     map,
     rooms,
@@ -210,5 +230,7 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
     specialRooms,
     secretWalls,
     bossArenaData: boss?.arenaData,
+    themedRooms,
+    steamVentTurns,
   };
 }
