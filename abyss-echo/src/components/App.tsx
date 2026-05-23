@@ -13,6 +13,7 @@ import ManualOverlay from './ManualOverlay';
 import TalentModal from './TalentModal';
 import ShopModal from './ShopModal';
 import EventModal from './EventModal';
+import BossBlessingModal from './BossBlessingModal';
 import SkillBar from './SkillBar';
 
 const GameScreen: React.FC = () => {
@@ -149,6 +150,7 @@ const GameScreen: React.FC = () => {
 
   const screenFlash = useGameStore(s => s.screenFlash);
   const warningPulse = useGameStore(s => s.warningPulse);
+  const bossBlessingPending = useGameStore(s => s.bossBlessingPending);
   const musicEnabled = useGameStore(s => s.musicEnabled);
   const sfxEnabled = useGameStore(s => s.sfxEnabled);
   const toggleMusic = useGameStore(s => s.toggleMusic);
@@ -246,6 +248,7 @@ const GameScreen: React.FC = () => {
       {phase === GamePhase.TalentSelection && <TalentModal />}
       {phase === GamePhase.Shop && <ShopModal />}
       {phase === GamePhase.Event && <EventModal />}
+      {bossBlessingPending && <BossBlessingModal />}
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       {showManual && <ManualOverlay onClose={() => setShowManual(false)} />}
       {showSuspendConfirm && (

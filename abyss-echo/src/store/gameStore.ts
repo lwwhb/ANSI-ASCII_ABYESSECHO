@@ -288,6 +288,7 @@ interface GameStore extends GameState {
   closeShop: () => void;
   chooseEventChoice: (choiceIndex: number) => void;
   closeEvent: () => void;
+  chooseBossBlessing: (blessing: BossBlessing) => void;
   restartGame: () => void;
   setPhase: (phase: GamePhase) => void;
   toggleMusic: () => void;
@@ -3211,6 +3212,30 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     closeEvent: () => {
       set({ phase: GamePhase.Playing });
+    },
+
+    chooseBossBlessing: (blessing: BossBlessing) => {
+      const state = get();
+      if (!state.player) return;
+      const player = { ...state.player };
+      player.bossBlessings.push(blessing);
+      const bossBlessingPending = false;
+      const lastBossDefId = null;
+
+      // Immediately-activated blessings
+      if (blessing === BossBlessing.EchoBody) {
+        player.bonusStats.str += 3;
+        player.bonusStats.dex += 3;
+        player.bonusStats.int += 3;
+        player.bonusStats.vit += 3;
+      }
+      if (blessing === BossBlessing.AbyssEye) {
+        player.visionRadius += 2;
+      }
+
+      addMessages([msg('获得了Boss祝福！', MessageCategory.System, '#ffd700')]);
+      set({ player, bossBlessingPending, lastBossDefId });
+      updateFOV();
     },
 
     restartGame: () => {
