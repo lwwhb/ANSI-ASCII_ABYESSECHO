@@ -5,8 +5,9 @@ import {
   StatusEffectType, ItemType, PotionEffect, ScrollEffect, Element, Rarity,
   WeaponItem, ArmorItem, PotionItem, ScrollItem, FoodItem, FloorItem,
   GameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
+  BossBlessing, EliteAffix,
 } from '../types';
-import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS } from '../constants';
+import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, BOSS_PASSIVES, INSCRIPTION_TEXTS } from '../constants';
 import { createScroll } from '../entities/Items';
 import { createFood } from '../entities/Items';
 import { generateDungeon, createTile } from '../generator/DungeonGenerator';
@@ -241,6 +242,23 @@ function checkAchievements(state: GameState, player: Player): string[] {
   check('glutton', state.currentFloor >= 5 && player.hunger >= 150);
 
   return newAchievements;
+}
+
+// ============================================================
+// Helper Functions
+// ============================================================
+function findAdjacentEmpty(pos: Position, map: Tile[][], enemies: Enemy[]): Position | null {
+  const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+  for (const [dx, dy] of dirs) {
+    const nx = pos.x + dx;
+    const ny = pos.y + dy;
+    if (ny >= 0 && ny < map.length && nx >= 0 && nx < map[0].length) {
+      if (map[ny][nx].walkable && !enemies.some(e => e.hp > 0 && e.pos.x === nx && e.pos.y === ny)) {
+        return { x: nx, y: ny };
+      }
+    }
+  }
+  return null;
 }
 
 // ============================================================
@@ -644,6 +662,12 @@ export const useGameStore = create<GameStore>((set, get) => {
         for (let action = 0; action < enemies[i].speed; action++) {
           const enemy = enemies[i]; // Re-read current state each action
 
+          // Skip attack on phase transition
+          if (enemy._skipAttack) {
+            enemies[i] = { ...enemy, _skipAttack: false };
+            continue;
+          }
+
           // 装备行为修正：虫群ATK加成
           let swarmBonus = 0;
           if (enemy.behavior === EnemyBehavior.Swarm) {
@@ -704,11 +728,34 @@ export const useGameStore = create<GameStore>((set, get) => {
             visibleTiles, enemies, rng
           );
 
+          // Boss phase skill selection
+          let originalSpecialAbility = enemy.specialAbility;
+          if (enemy.isBoss && enemy.bossPhase > 1) {
+            const phases = BOSS_PHASES[enemy.defId];
+            if (phases) {
+              // Collect all abilities from P1 up to current phase
+              const availableAbilities: string[] = [];
+              if (enemy.specialAbility) availableAbilities.push(enemy.specialAbility);
+              for (let p = 0; p < enemy.bossPhase - 1 && p < phases.length; p++) {
+                availableAbilities.push(...phases[p].newAbilities);
+              }
+              // 35% chance to use a phase ability instead of normal attack
+              if (rng.next() < 0.35 && availableAbilities.length > 0) {
+                const ability = rng.pick(availableAbilities);
+                enemies[i] = { ...enemy, specialAbility: ability };
+              }
+            }
+          }
+
           if (actionResult === 'wait') {
             // do nothing
           } else if (actionResult === 'special') {
             if (enemy.specialAbility) {
-              handleSpecialAbility(enemy, player, enemies, messages, rng);
+              handleSpecialAbility(enemies[i], player, enemies, messages, rng);
+            }
+            // Restore original special ability if boss used a phase ability
+            if (enemy.isBoss && enemy.bossPhase > 1 && originalSpecialAbility !== undefined) {
+              enemies[i] = { ...enemies[i], specialAbility: originalSpecialAbility };
             }
             if (player.hp <= 0) {
               handlePlayerDeath(player, enemies, messages, `被${enemy.name}击杀`);
@@ -717,7 +764,16 @@ export const useGameStore = create<GameStore>((set, get) => {
           } else if (actionResult === 'attack') {
             const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player) - berserkDefPenalty;
             const variance = rng.nextInt(-2, 2);
-            const rawDamage = enemy.attack + swarmBonus + berserkAtkBonus + variance;
+
+            // Boss passive: Goblin King pack leader (+3 ATK when minions alive)
+            let packLeaderBonus = 0;
+            if (enemy.isBoss && enemy.defId === 'goblinKing') {
+              const hasMinions = enemies.some(e => e.hp > 0 && !e.isBoss && !e.isElite &&
+                Math.abs(e.pos.x - enemy.pos.x) <= 8 && Math.abs(e.pos.y - enemy.pos.y) <= 6);
+              if (hasMinions) packLeaderBonus = 3;
+            }
+
+            const rawDamage = enemy.attack + swarmBonus + berserkAtkBonus + packLeaderBonus + variance;
 
             // 装备特效：闪避回蓝 — 闪避判定在受伤前
             const evasion = (player.equipment[EquipmentSlot.Armor] as ArmorItem | null)?.evasion ?? 0;
@@ -1035,6 +1091,207 @@ export const useGameStore = create<GameStore>((set, get) => {
         // Mirror Image: explodes on death (handled in death processing)
         break;
       }
+      // === Boss Phase Abilities ===
+      case 'warCry': {
+        const allies = enemies.filter(e => e.hp > 0 && !e.isBoss && e.id !== enemy.id);
+        for (const ally of allies) {
+          const allyIdx = enemies.findIndex(e => e.id === ally.id);
+          if (allyIdx >= 0) {
+            // Use existing speed increment instead of status effect
+            enemies[allyIdx] = { ...ally, speed: ally.speed + 1 };
+          }
+        }
+        messages.push(msg(`${enemy.name}发出战吼！所有同伴速度提升！`, MessageCategory.Combat, '#ffcc44'));
+        break;
+      }
+      case 'throwNet': {
+        if (rng.next() < 0.35) {
+          player.statusEffects.push({ type: StatusEffectType.Freeze, duration: 1, damage: 0 });
+          messages.push(msg(`${enemy.name}投出罗网！你被冰冻了！`, MessageCategory.Combat, '#ff4444'));
+        } else {
+          messages.push(msg(`${enemy.name}投出罗网，但你躲开了！`, MessageCategory.Combat, '#888888'));
+        }
+        break;
+      }
+      case 'poisonMist': {
+        const chance = enemy.bossPhase >= 3 ? 0.8 : 0.6;
+        if (rng.next() < chance) {
+          player.statusEffects.push({ type: StatusEffectType.Poison, duration: 5, damage: 4 });
+          messages.push(msg(`${enemy.name}喷射毒雾！你中毒了！`, MessageCategory.Combat, '#44cc44'));
+        } else {
+          messages.push(msg(`${enemy.name}喷射毒雾，但你抵抗了！`, MessageCategory.Combat, '#888888'));
+        }
+        break;
+      }
+      case 'cocoon': {
+        if (rng.next() < 0.25) {
+          player.statusEffects.push({ type: StatusEffectType.Freeze, duration: 2, damage: 0 });
+          messages.push(msg(`${enemy.name}吐出茧缚！你被冰冻了2回合！`, MessageCategory.Combat, '#ff4444'));
+        } else {
+          messages.push(msg(`${enemy.name}吐出茧缚，但你挣脱了！`, MessageCategory.Combat, '#888888'));
+        }
+        break;
+      }
+      case 'raiseDead': {
+        const state = get();
+        const deadEnemyTypes = [...new Set(enemies.filter(e => e.hp <= 0 && !e.isBoss).map(e => e.defId))];
+        let raised = 0;
+        for (const deadDefId of deadEnemyTypes.slice(0, 2)) {
+          const pos = findAdjacentEmpty(enemy.pos, state.map, enemies);
+          if (pos) {
+            const raisedEnemy = createEnemy(deadDefId, pos, false, state.currentFloor);
+            if (raisedEnemy) {
+              const eIdx = enemies.length;
+              enemies.push({ ...raisedEnemy, hp: Math.floor(raisedEnemy.maxHp * 0.3) });
+              raised++;
+            }
+          }
+        }
+        messages.push(msg(`${enemy.name}施展亡者苏醒！${raised}个亡灵复活了！`, MessageCategory.Combat, '#cc44ff'));
+        break;
+      }
+      case 'infernalFire': {
+        if (rng.next() < 0.7) {
+          player.statusEffects.push({ type: StatusEffectType.Burn, duration: 4, damage: 5 });
+          messages.push(msg(`${enemy.name}释放狱火！你燃烧了！`, MessageCategory.Combat, '#ff6644'));
+        } else {
+          messages.push(msg(`${enemy.name}释放狱火，但你避开了！`, MessageCategory.Combat, '#888888'));
+        }
+        break;
+      }
+      case 'summonLavaWorm': {
+        const state = get();
+        const pos = findAdjacentEmpty(enemy.pos, state.map, enemies);
+        if (pos) {
+          const minion = createEnemy('lavaWorm', pos, false, state.currentFloor);
+          if (minion) {
+            enemies.push(minion);
+            messages.push(msg(`${enemy.name}召唤了一只熔岩虫！`, MessageCategory.Combat, '#ff6622'));
+          }
+        }
+        break;
+      }
+      case 'infernalCharge': {
+        const dmg = Math.floor(enemy.attack * 1.2);
+        player.hp = Math.max(1, player.hp - dmg);
+        messages.push(msg(`${enemy.name}释放炼狱冲击！造成${dmg}点火焰伤害！`, MessageCategory.Combat, '#ff4422'));
+        // Also damages allied minions
+        const allies = enemies.filter(e => e.hp > 0 && !e.isBoss && e.id !== enemy.id);
+        for (const ally of allies) {
+          const allyIdx = enemies.findIndex(e => e.id === ally.id);
+          if (allyIdx >= 0) {
+            enemies[allyIdx] = { ...ally, hp: Math.max(0, ally.hp - dmg) };
+          }
+        }
+        if (allies.length > 0) {
+          messages.push(msg(`炼狱冲击也波及了${allies.length}只小怪！`, MessageCategory.Combat, '#ffaa44'));
+        }
+        break;
+      }
+      case 'dimensionTear': {
+        // Teleport player to random walkable position near boss room center
+        const state = get();
+        const cx = enemy.pos.x;
+        const cy = enemy.pos.y;
+        const walkable: Position[] = [];
+        for (let dy = -6; dy <= 6; dy++) {
+          for (let dx = -6; dx <= 6; dx++) {
+            const nx = cx + dx, ny = cy + dy;
+            if (ny >= 0 && ny < state.map.length && nx >= 0 && nx < state.map[0].length) {
+              if (state.map[ny][nx].walkable && !enemies.some(e => e.hp > 0 && e.pos.x === nx && e.pos.y === ny)) {
+                walkable.push({ x: nx, y: ny });
+              }
+            }
+          }
+        }
+        if (walkable.length > 0) {
+          const newPos = rng.pick(walkable);
+          player.pos = { ...newPos };
+          messages.push(msg(`${enemy.name}撕裂了维度！你被传送到了！`, MessageCategory.Combat, '#cc44ff'));
+        }
+        break;
+      }
+      case 'summonVoidWeaver': {
+        const state = get();
+        const pos = findAdjacentEmpty(enemy.pos, state.map, enemies);
+        if (pos) {
+          const minion = createEnemy('voidWeaver', pos, false, state.currentFloor);
+          if (minion) {
+            enemies.push(minion);
+            messages.push(msg(`${enemy.name}召唤了一只虚空织者！`, MessageCategory.Combat, '#cc44ff'));
+          }
+        }
+        break;
+      }
+      case 'summonVoidWeaver2': {
+        const state = get();
+        for (let s = 0; s < 2; s++) {
+          const pos = findAdjacentEmpty(enemy.pos, state.map, enemies);
+          if (pos) {
+            const minion = createEnemy('voidWeaver', pos, false, state.currentFloor);
+            if (minion) enemies.push(minion);
+          }
+        }
+        messages.push(msg(`${enemy.name}召唤了虚空织者！`, MessageCategory.Combat, '#cc44ff'));
+        break;
+      }
+      case 'annihilate': {
+        if (rng.next() < 0.2) {
+          player.hp = 1;
+          player.statusEffects.push({ type: StatusEffectType.Burn, duration: 3, damage: 3 });
+          messages.push(msg(`${enemy.name}释放湮灭波！你的HP降至1！燃烧了！`, MessageCategory.Combat, '#ff4444'));
+        } else {
+          messages.push(msg(`${enemy.name}释放湮灭波！你勉强撑住了！`, MessageCategory.Combat, '#888888'));
+        }
+        break;
+      }
+      case 'voidRay': {
+        let damage = Math.floor(enemy.attack * 1.8);
+        if (hasElementResist) { damage = Math.floor(damage * 0.7); }
+        player.hp -= damage;
+        messages.push(msg(`${enemy.name}发射虚空射线！造成${damage}点伤害！`, MessageCategory.Combat, '#cc44ff'));
+        break;
+      }
+      case 'devourMinion': {
+        const minion = enemies.find(e => e.hp > 0 && !e.isBoss && e.id !== enemy.id);
+        if (minion) {
+          const minionIdx = enemies.findIndex(e => e.id === minion.id);
+          if (minionIdx >= 0) {
+            enemies[minionIdx] = { ...minion, hp: 0 };
+          }
+          const healAmt = Math.floor(enemy.maxHp * 0.3);
+          const bossIdx = enemies.findIndex(e => e.id === enemy.id);
+          if (bossIdx >= 0) {
+            enemies[bossIdx] = { ...enemy, hp: Math.min(enemy.maxHp, enemy.hp + healAmt) };
+          }
+          messages.push(msg(`${enemy.name}吞噬了${minion.name}！回复了${healAmt}点HP！`, MessageCategory.Combat, '#cc44ff'));
+        } else {
+          messages.push(msg(`${enemy.name}试图吞噬仆从，但周围没有可吞噬的目标！`, MessageCategory.Combat, '#888888'));
+        }
+        break;
+      }
+      case 'voidPulse': {
+        const vampRate = enemy.bossPhase >= 3 ? 0.8 : 0.6;
+        const dmg = Math.floor(enemy.attack * 1.0);
+        player.hp -= dmg;
+        const healAmt = Math.floor(dmg * vampRate);
+        const bossIdx = enemies.findIndex(e => e.id === enemy.id);
+        if (bossIdx >= 0) {
+          enemies[bossIdx] = { ...enemy, hp: Math.min(enemy.maxHp, enemy.hp + healAmt) };
+        }
+        messages.push(msg(`${enemy.name}释放虚空脉冲！造成${dmg}点伤害并回复${healAmt}HP！`, MessageCategory.Combat, '#cc44ff'));
+        break;
+      }
+      case 'corrodeAll': {
+        player.stats = {
+          str: Math.max(1, player.stats.str - 1),
+          dex: Math.max(1, player.stats.dex - 1),
+          int: Math.max(1, player.stats.int - 1),
+          vit: Math.max(1, player.stats.vit - 1),
+        };
+        messages.push(msg(`${enemy.name}释放全属性侵蚀！你的所有属性-1！`, MessageCategory.Combat, '#cc44ff'));
+        break;
+      }
     }
   }
 
@@ -1327,6 +1584,45 @@ export const useGameStore = create<GameStore>((set, get) => {
           const mpGain = Math.max(1, Math.floor(result.damage * 0.15));
           player.mp = Math.min(player.maxMp, player.mp + mpGain);
           messages.push(msg(`吸魔回复 ${mpGain} MP`, MessageCategory.Combat, '#4488ff'));
+        }
+
+        // Boss phase transition check
+        const enemyIdx = enemies.findIndex(e => e.id === enemy.id);
+        if (enemy.isBoss && enemyIdx >= 0 && newHp > 0) {
+          const boss = enemies[enemyIdx];
+          const phases = BOSS_PHASES[boss.defId];
+          if (phases) {
+            const hpPercent = boss.hp / boss.maxHp;
+            const currentPhaseIdx = boss.bossPhase - 1;  // bossPhase 1→idx 0, phase 2→idx 1
+            if (currentPhaseIdx < phases.length) {
+              const nextPhase = phases[currentPhaseIdx];
+              if (hpPercent <= nextPhase.hpThreshold) {
+                // Execute phase transition
+                enemies[enemyIdx] = { ...boss, bossPhase: (currentPhaseIdx + 2) as 1 | 2 | 3, attack: boss.attack + nextPhase.atkBonus, defense: boss.defense + nextPhase.defBonus };
+                if (nextPhase.speedOverride !== undefined) enemies[enemyIdx] = { ...enemies[enemyIdx], speed: nextPhase.speedOverride };
+                if (nextPhase.defOverride !== undefined) enemies[enemyIdx] = { ...enemies[enemyIdx], defense: nextPhase.defOverride };
+
+                // Phase transition summon
+                if (nextPhase.summonOnTransition) {
+                  const summonDefId = nextPhase.summonOnTransition.defId;
+                  const summonCount = nextPhase.summonOnTransition.count;
+                  for (let s = 0; s < summonCount; s++) {
+                    const summonPos = findAdjacentEmpty(boss.pos, state.map, enemies);
+                    if (summonPos) {
+                      const summoned = createEnemy(summonDefId, summonPos, false, state.currentFloor);
+                      if (summoned) enemies.push(summoned);
+                    }
+                  }
+                }
+
+                // Message
+                messages.push(msg(nextPhase.messageZh, MessageCategory.Combat, '#ff4444'));
+
+                // Boss skips this turn (1 turn preparation for player)
+                enemies[enemyIdx] = { ...enemies[enemyIdx], _skipAttack: true };
+              }
+            }
+          }
         }
 
         if (newHp <= 0) {
