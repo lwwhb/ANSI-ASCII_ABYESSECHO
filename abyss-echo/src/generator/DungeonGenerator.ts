@@ -5,7 +5,7 @@ import {
   MIN_BSP_SIZE, BSP_SPLIT_MIN, BSP_SPLIT_MAX, TILE_CHARS,
   BIOME_TILES, BIOME_CONFIG, getBiomeForFloor,
   ENEMIES_PER_FLOOR_BASE, ENEMIES_PER_FLOOR_GROWTH,
-  BOSS_DEFS,
+  BOSS_DEFS, BOSS_ARENA_OBJECTS, SPECIAL_ROOM_CHANCES,
 } from '../constants';
 import { generateStoneDungeon } from './StoneDungeonGenerator';
 import { generateCrystalCave } from './CrystalCaveGenerator';
@@ -236,6 +236,211 @@ export function tryDoor(map: Tile[][], x: number, y: number, biome: Biome): void
   }
 }
 
+// ============================================================
+// Special Tile Creation Helpers
+// ============================================================
+
+function makeTile(type: TileType, char: string, fg: string, bg: string, walkable: boolean, transparent: boolean): Tile {
+  return { type, char, fg, bg, walkable, transparent, visible: false, remembered: false };
+}
+
+const NEW_TILE_DEFAULTS: Record<string, { char: string; fg: string; bg: string; walkable: boolean; transparent: boolean }> = {
+  throne:         { char: '♔', fg: '#ffd700', bg: '#1a0808', walkable: false, transparent: false },
+  barricade:      { char: '▦', fg: '#8b4513', bg: '#1a0808', walkable: false, transparent: true },
+  webFloor:       { char: '≈', fg: '#aaaaaa', bg: '#0a0a1a', walkable: true,  transparent: true },
+  spiderEgg:      { char: '◉', fg: '#cccccc', bg: '#0a0a1a', walkable: true,  transparent: true },
+  altar:          { char: '⛩', fg: '#aaaaff', bg: '#140a14', walkable: true,  transparent: true },
+  lavaPool:       { char: '≈', fg: '#ff4400', bg: '#1a0a04', walkable: false, transparent: true },
+  voidRift:       { char: '◎', fg: '#ff44ff', bg: '#100818', walkable: true,  transparent: true },
+  voidPillar:     { char: '█', fg: '#8800aa', bg: '#100818', walkable: false, transparent: false },
+  corruptionPool: { char: '◎', fg: '#aa00aa', bg: '#100818', walkable: true,  transparent: true },
+  healCrystal:    { char: '◆', fg: '#00ffaa', bg: '#100818', walkable: true,  transparent: true },
+  eliteDoor:      { char: '▦', fg: '#ffd700', bg: 'transparent', walkable: false, transparent: true },
+  fountain:       { char: '⌠', fg: '#44aaff', bg: 'transparent', walkable: true, transparent: true },
+  inscription:    { char: '▐', fg: '#ddddaa', bg: 'transparent', walkable: true, transparent: true },
+  secretWall:     { char: '#', fg: '#444444', bg: '#222222', walkable: true, transparent: true },
+  monument:       { char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true },
+};
+
+// ============================================================
+// Boss Arena Support
+// ============================================================
+
+export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId: string; pos: Position; isBoss: boolean; bossRoom: Room; arenaData?: BossArenaData } | null {
+  if (floor % 5 !== 0 && floor !== 30) return null;
+
+  const bossIndex = floor === 30 ? 5 : Math.floor(floor / 5) - 1;
+  const bossDef = BOSS_DEFS[Math.min(bossIndex, BOSS_DEFS.length - 1)];
+  if (!bossDef) return null;
+
+  const bossRoom = rooms.length > 2 ? rooms[rooms.length - 2] : rooms[rooms.length - 1];
+
+  // Build arena objects
+  const arenaObjectDefs = BOSS_ARENA_OBJECTS[bossDef.id];
+  const arenaData: BossArenaData | undefined = arenaObjectDefs ? {
+    bossDefId: bossDef.id,
+    objects: arenaObjectDefs.map(o => ({
+      type: o.type,
+      x: bossRoom.centerX + o.relX,
+      y: bossRoom.centerY + o.relY,
+    })),
+  } : undefined;
+
+  return {
+    defId: bossDef.id,
+    pos: { x: bossRoom.centerX, y: bossRoom.centerY },
+    isBoss: true,
+    bossRoom,
+    arenaData,
+  };
+}
+
+export function placeArenaObjects(map: Tile[][], arenaData: BossArenaData): void {
+  for (const obj of arenaData.objects) {
+    if (obj.y >= 0 && obj.y < map.length && obj.x >= 0 && obj.x < map[0].length) {
+      const defaults = NEW_TILE_DEFAULTS[obj.type];
+      if (defaults) {
+        map[obj.y][obj.x] = makeTile(obj.type, defaults.char, defaults.fg, defaults.bg, defaults.walkable, defaults.transparent);
+      }
+    }
+  }
+}
+
+// ============================================================
+// Elite and Special Rooms Support
+// ============================================================
+
+function findRoomDoor(map: Tile[][], room: Room): Position | null {
+  // Search room boundary for corridor/door connections
+  for (let y = room.y; y < room.y + room.h; y++) {
+    for (let x = room.x; x < room.x + room.w; x++) {
+      if (y >= 0 && y < map.length && x >= 0 && x < map[0].length) {
+        const t = map[y][x].type;
+        if (t === TileType.Corridor || t === TileType.Door || t === TileType.DoorOpen) {
+          return { x, y };
+        }
+      }
+    }
+  }
+  return { x: room.centerX, y: room.y };
+}
+
+function findRoomBoundaryWall(map: Tile[][], room: Room, rng: SeededRandom): Position | null {
+  const candidates: Position[] = [];
+  // Check top and bottom walls of room
+  for (let x = room.x; x < room.x + room.w; x++) {
+    if (room.y > 0 && room.y < map.length && x >= 0 && x < map[0].length) {
+      if (map[room.y][x].type === TileType.Wall) candidates.push({ x, y: room.y });
+    }
+    const by = room.y + room.h;
+    if (by > 0 && by < map.length && x >= 0 && x < map[0].length) {
+      if (map[by][x].type === TileType.Wall) candidates.push({ x, y: by });
+    }
+  }
+  // Check left and right walls
+  for (let y = room.y; y < room.y + room.h; y++) {
+    if (room.x > 0 && y >= 0 && y < map.length && room.x < map[0].length) {
+      if (map[y][room.x].type === TileType.Wall) candidates.push({ x: room.x, y });
+    }
+    const rx = room.x + room.w;
+    if (rx > 0 && rx < map[0].length && y >= 0 && y < map.length) {
+      if (map[y][rx].type === TileType.Wall) candidates.push({ x: rx, y });
+    }
+  }
+  return candidates.length > 0 ? rng.pick(candidates) : null;
+}
+
+export function placeEliteAndSpecialRooms(
+  map: Tile[][],
+  rooms: Room[],
+  floor: number,
+  rng: SeededRandom,
+  enemyIds: string[],
+  biome: Biome,
+): {
+  eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | null;
+  eliteRoom: Room | null;
+  specialRooms: { type: TileType; room: Room; pos: Position }[];
+  secretWalls: Position[];
+} {
+  let eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | null = null;
+  let eliteRoom: Room | null = null;
+  const specialRooms: { type: TileType; room: Room; pos: Position }[] = [];
+  const secretWalls: Position[] = [];
+
+  const nonStartRooms = rooms.slice(1);
+  if (nonStartRooms.length < 2) return { eliteEnemy, eliteRoom, specialRooms, secretWalls };
+
+  // Elite room (40% chance, not on boss floors)
+  if (floor % 5 !== 0 && rng.next() < SPECIAL_ROOM_CHANCES.eliteRoom) {
+    const roomIdx = rng.nextInt(0, nonStartRooms.length - 1);
+    const room = nonStartRooms[roomIdx];
+    eliteRoom = room;
+
+    // Place elite door at room entrance
+    const doorPos = findRoomDoor(map, room);
+    if (doorPos) {
+      const d = NEW_TILE_DEFAULTS['eliteDoor']!;
+      map[doorPos.y][doorPos.x] = makeTile(TileType.EliteDoor, d.char, d.fg, d.bg, d.walkable, d.transparent);
+    }
+
+    // Pick random affix
+    const affixValues = Object.values(EliteAffix);
+    const affix = rng.pick(affixValues) as EliteAffix;
+    const pos = {
+      x: rng.nextInt(room.x + 1, room.x + room.w - 2),
+      y: rng.nextInt(room.y + 1, room.y + room.h - 2),
+    };
+    const defId = rng.pick(enemyIds);
+    eliteEnemy = { defId, pos, isElite: true, eliteAffix: affix };
+  }
+
+  // Inscription room (20% chance)
+  if (rng.next() < SPECIAL_ROOM_CHANCES.inscriptionRoom && nonStartRooms.length > 2) {
+    const room = nonStartRooms[rng.nextInt(0, nonStartRooms.length - 1)];
+    const pos = { x: room.centerX, y: room.centerY };
+    const d = NEW_TILE_DEFAULTS['inscription']!;
+    map[pos.y][pos.x] = makeTile(TileType.Inscription, d.char, d.fg, d.bg, d.walkable, d.transparent);
+    specialRooms.push({ type: TileType.Inscription, room, pos });
+  }
+
+  // Fountain room (10% chance)
+  if (rng.next() < SPECIAL_ROOM_CHANCES.fountainRoom && nonStartRooms.length > 3) {
+    const room = nonStartRooms[rng.nextInt(0, nonStartRooms.length - 1)];
+    const pos = { x: room.centerX, y: room.centerY };
+    const d = NEW_TILE_DEFAULTS['fountain']!;
+    map[pos.y][pos.x] = makeTile(TileType.Fountain, d.char, d.fg, d.bg, d.walkable, d.transparent);
+    specialRooms.push({ type: TileType.Fountain, room, pos });
+  }
+
+  // Secret walls (1-2 per floor)
+  const wallCount = rng.nextInt(1, 2);
+  for (let i = 0; i < wallCount; i++) {
+    const room = nonStartRooms[rng.nextInt(0, nonStartRooms.length - 1)];
+    const wallPos = findRoomBoundaryWall(map, room, rng);
+    if (wallPos) {
+      const outsideX = wallPos.x < room.centerX ? wallPos.x - 2 : wallPos.x + 2;
+      const outsideY = wallPos.y < room.centerY ? wallPos.y - 2 : wallPos.y + 2;
+      // Create small hidden room (3x3)
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = outsideX + dx;
+          const ny = outsideY + dy;
+          if (ny >= 2 && ny < map.length - 2 && nx >= 2 && nx < map[0].length - 2) {
+            map[ny][nx] = makeTile(TileType.Floor, '.', '#555555', 'transparent', true, true);
+          }
+        }
+      }
+      // Replace wall with secret wall
+      const d = NEW_TILE_DEFAULTS['secretWall']!;
+      map[wallPos.y][wallPos.x] = makeTile(TileType.SecretWall, d.char, d.fg, d.bg, d.walkable, d.transparent);
+      secretWalls.push(wallPos);
+    }
+  }
+
+  return { eliteEnemy, eliteRoom, specialRooms, secretWalls };
+}
+
 export function addEnvironment(map: Tile[][], rooms: Room[], biome: Biome, rng: SeededRandom, floor: number): void {
   const config = BIOME_CONFIG[biome];
   const height = map.length;
@@ -395,23 +600,6 @@ export function pickStartAndStairs(rooms: Room[], rng: SeededRandom, mapWidth: n
     return { startRoom: rooms[bestA], stairsRoom: rooms[bestB] };
   }
   return { startRoom: rooms[bestB], stairsRoom: rooms[bestA] };
-}
-
-// Helper function to place boss (used by all generators)
-export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId: string; pos: Position; isBoss: boolean; bossRoom: Room } | null {
-  if (floor % 5 !== 0) return null;
-
-  const bossIndex = Math.floor(floor / 5) - 1;
-  const bossDef = BOSS_DEFS[Math.min(bossIndex, BOSS_DEFS.length - 1)];
-  if (!bossDef) return null;
-
-  const bossRoom = rooms.length > 2 ? rooms[rooms.length - 2] : rooms[rooms.length - 1];
-  return {
-    defId: bossDef.id,
-    pos: { x: bossRoom.centerX, y: bossRoom.centerY },
-    isBoss: true,
-    bossRoom,
-  };
 }
 
 // Mark boss room floor tiles with a distinctive background color

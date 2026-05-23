@@ -7,7 +7,7 @@ import {
   splitBSP, createRooms, collectRooms,
   carveRoom, addEnvironment,
   placeEnemies, placeItems, placeBoss, markBossRoom,
-  pickStartAndStairs,
+  pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
 } from './DungeonGenerator';
 
 function carveWideCorridorReal(map: import('../types').Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome): void {
@@ -188,5 +188,27 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
   const boss = placeBoss(rooms, floor, biome);
   if (boss) { enemies.push(boss); markBossRoom(map, boss.bossRoom, biome); }
 
-  return { map, rooms, playerStart, stairsDown, enemies, items, shopPos, eventPos };
+  // Boss arena
+  if (boss?.arenaData) {
+    placeArenaObjects(map, boss.arenaData);
+  }
+
+  // Elite + special rooms + secret walls
+  const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
+
+  return {
+    map,
+    rooms,
+    playerStart,
+    stairsDown,
+    enemies,
+    items,
+    shopPos,
+    eventPos,
+    eliteEnemy,
+    eliteRoom,
+    specialRooms,
+    secretWalls,
+    bossArenaData: boss?.arenaData,
+  };
 }
