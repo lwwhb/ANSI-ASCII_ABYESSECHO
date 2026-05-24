@@ -25,7 +25,7 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   useEffect(() => {
     const el = document.getElementById(`section-${activeSection}`);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.scrollIntoView({ behavior: 'instant', block: 'start' });
     }
   }, [activeSection]);
 
@@ -79,13 +79,14 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   return (
     <div
+      className="modal-overlay"
       style={{
         position: 'fixed',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.92)',
+        backgroundColor: 'rgba(0,0,0,0.85)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -282,6 +283,7 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <p style={pStyle}>• <strong style={{ color: '#aaaaaa' }}>近战：</strong>走向敌人自动攻击，伤害 = STR + 武器 - 敌人DEF</p>
             <p style={pStyle}>• <strong style={{ color: '#aaaaaa' }}>暴击：</strong>5% + DEX/200 的概率，造成1.5倍伤害</p>
             <p style={pStyle}>• <strong style={{ color: '#aaaaaa' }}>防御：</strong>减少 DEX/3 + 护甲DEF 的伤害</p>
+            <p style={pStyle}>• <strong style={{ color: '#aaaaaa' }}>视觉反馈：</strong>攻击/治疗/链反应会显示浮动伤害数字；暴击/Boss/链反应触发屏幕震动</p>
 
             <h3 style={h3Style}>元素系统</h3>
             <table style={tableStyle}>
@@ -294,6 +296,21 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               </tbody>
             </table>
             <p style={pStyle}><strong style={{ color: '#aaaaaa' }}>元素克制：</strong>1.5倍伤害 | <strong style={{ color: '#aaaaaa' }}>抵抗：</strong>0.5倍伤害</p>
+
+            <h3 style={h3Style}>元素链反应</h3>
+            <p style={pStyle}>当地形上的元素与攻击元素发生交互时，会触发<strong style={{ color: '#ffcc44' }}>链反应</strong>：</p>
+            <table style={tableStyle}>
+              <thead><tr><th style={thStyle}>组合</th><th style={thStyle}>反应</th><th style={thStyle}>效果</th></tr></thead>
+              <tbody>
+                <tr><td style={tdStyle}>🔥火 + 💧浅水</td><td style={tdStyle}>蒸发</td><td style={tdStyle}>范围伤害</td></tr>
+                <tr><td style={tdStyle}>❄冰 + 💧浅水</td><td style={tdStyle}>冻结</td><td style={tdStyle}>范围冰冻</td></tr>
+                <tr><td style={tdStyle}>⚡雷 + 💧浅水</td><td style={tdStyle}>传导</td><td style={tdStyle}>范围连锁伤害</td></tr>
+                <tr><td style={tdStyle}>🔥火 + 🟢毒气</td><td style={tdStyle}>爆燃</td><td style={tdStyle}>范围伤害+清除毒气</td></tr>
+                <tr><td style={tdStyle}>❄冰 + 🟢毒气</td><td style={tdStyle}>毒霜</td><td style={tdStyle}>范围中毒</td></tr>
+                <tr><td style={tdStyle}>⚡雷 + 🟢毒气</td><td style={tdStyle}>催化</td><td style={tdStyle}>范围伤害+中毒</td></tr>
+                <tr><td style={tdStyle}>⚡雷 + ❄冰</td><td style={tdStyle}>碎裂</td><td style={tdStyle}>范围伤害</td></tr>
+              </tbody>
+            </table>
 
             <h3 style={h3Style}>状态效果</h3>
             <table style={tableStyle}>
@@ -491,6 +508,11 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <p style={pStyle}>• 饱食度低于30时会出现<strong style={{ color: '#ff6644' }}>警告</strong></p>
             <p style={pStyle}>• 饱食度降为0时，每回合<strong style={{ color: '#ff4444' }}>损失3HP</strong></p>
             <p style={pStyle}>• <strong style={{ color: '#aaaaaa' }}>保持食物充足！</strong>这是你持续深入的基础</p>
+
+            <h3 style={h3Style}>⚠️ 警告系统</h3>
+            <p style={pStyle}>• <strong style={{ color: '#ff4444' }}>低HP</strong>（HP &lt; 30%最大HP）：屏幕红色脉冲 + 心跳音效（每3回合）</p>
+            <p style={pStyle}>• <strong style={{ color: '#ffcc44' }}>饥饿</strong>（饱食度 = 0）：屏幕黄色脉冲 + 胃鸣音效（每5回合）</p>
+            <p style={pStyle}>• <strong style={{ color: '#ff8844' }}>双重危险</strong>（同时低HP且饥饿）：屏幕橙色脉冲 + 心跳与胃鸣交替</p>
           </div>
 
           {/* 策略指南 */}

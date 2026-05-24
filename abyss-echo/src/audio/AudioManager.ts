@@ -45,6 +45,9 @@ class AudioManagerClass {
   private _inBossFight: boolean = false;
   private _generation: number = 0; // 用于取消过时的 setTimeout 回调
 
+  // SFX ducking timeout tracking (C10 fix)
+  private _sfxDuckingTimeout: number | null = null;
+
   // Mute state
   private _musicEnabled: boolean = true;
   private _sfxEnabled: boolean = true;
@@ -146,8 +149,12 @@ class AudioManagerClass {
     // Schedule all drum steps within the lookahead window
     // 仅当曲目有鼓声模式时才调度，否则跳过（无鼓声时 nextDrumTime 不推进会导致无限循环）
     if (state.track.drums) {
-      while (state.nextDrumTime < scheduleUntil) {
+      // H17 fix: Add safety counter to prevent infinite loop
+      let drumIterations = 0;
+      const maxDrumIterations = 64;
+      while (state.nextDrumTime < scheduleUntil && drumIterations < maxDrumIterations) {
         this.scheduleDrumHits(state, state.nextDrumTime, state.drumStep);
+        drumIterations++;
       }
     }
   }
@@ -192,6 +199,27 @@ class AudioManagerClass {
     gainNode.connect(this.bgmGain);
     osc.start(startTime);
     osc.stop(startTime + duration);
+
+    // A3 fix: Add secondary oscillator (wave2) for layered timbre
+    if (state.track.wave2 && !isRest) {
+      const osc2 = this.ctx.createOscillator();
+      const gain2 = this.ctx.createGain();
+      osc2.type = state.track.wave2;
+      osc2.frequency.setValueAtTime(midiToFreq(note.midi), startTime);
+      const layerGain = state.track.gain * 0.3; // Secondary layer at 30% volume
+      gain2.gain.setValueAtTime(layerGain, startTime);
+      gain2.gain.setValueAtTime(layerGain, startTime + duration * 0.8);
+      gain2.gain.linearRampToValueAtTime(0.001, startTime + duration * 0.95);
+      osc2.connect(gain2);
+      gain2.connect(this.bgmGain);
+      osc2.start(startTime);
+      osc2.stop(startTime + duration);
+      state.activeOscillators.push({
+        oscillator: osc2,
+        gainNode: gain2,
+        stopTime: startTime + duration
+      });
+    }
 
     // Track the oscillator for cleanup
     state.activeOscillators.push({
@@ -437,7 +465,7 @@ class AudioManagerClass {
         if (this._generation === crossfadeGen && this._musicEnabled) {
           this.playTrack(track);
         }
-      }, 300);
+      }, 350); // H18 fix: 350ms to ensure stopBGM 0.3s ramp completes
     } else {
       // 没有正在播放的音轨，立即开始，无需等待
       this.playTrack(track);
@@ -478,6 +506,7 @@ class AudioManagerClass {
       const stopGen = this._generation;
 
       // Stop oscillators after fade-out
+      // H18 fix: Increase setTimeout to 350ms to ensure ramp completes
       setTimeout(() => {
         // 只有 generation 未变时才清理（说明期间没有新的 playBGM/playTrack 调用）
         if (this._generation === stopGen) {
@@ -487,7 +516,7 @@ class AudioManagerClass {
         if (this.bgmGain) {
           this.bgmGain.gain.value = 0.5;
         }
-      }, 300);
+      }, 350);
     }
 
     this._currentBgmState = null;
@@ -514,6 +543,7 @@ class AudioManagerClass {
     }
 
     this._inBossFight = true;
+    this.playSFX('bossAppear');
     this.playBGM('boss');
   }
 
@@ -541,20 +571,27 @@ class AudioManagerClass {
     const sfx = SFX_DEFS.find(s => s.id === id);
     if (!sfx) return;
 
-    // Duck BGM
+    // Duck BGM (C10 fix: cancel previous restore before scheduling new one)
     if (this.bgmGain) {
       const currentTime = this.ctx.currentTime;
+
+      // Clear any pending restore timeout
+      if (this._sfxDuckingTimeout !== null) {
+        clearTimeout(this._sfxDuckingTimeout);
+        this._sfxDuckingTimeout = null;
+      }
 
       // Lower BGM to 0.15 over 50ms
       this.bgmGain.gain.linearRampToValueAtTime(0.15, currentTime + 0.05);
 
       // Restore to 0.5 after 200ms delay, over 300ms
       const sfxGen = this._generation;
-      setTimeout(() => {
+      this._sfxDuckingTimeout = window.setTimeout(() => {
         if (this.bgmGain && this._generation === sfxGen) {
           const restoreTime = this.ctx.currentTime;
           this.bgmGain.gain.linearRampToValueAtTime(0.5, restoreTime + 0.3);
         }
+        this._sfxDuckingTimeout = null;
       }, 200);
     }
 
@@ -593,6 +630,12 @@ class AudioManagerClass {
     gainNode.connect(this.sfxGain);
     osc.start(startTime);
     osc.stop(startTime + stage.duration);
+
+    // Disconnect nodes after sound finishes to prevent audio graph memory leak
+    osc.onended = () => {
+      try { gainNode.disconnect(); } catch { /* already disconnected */ }
+      try { osc.disconnect(); } catch { /* already disconnected */ }
+    };
   }
 
   // ============================================================================
@@ -670,6 +713,9 @@ class AudioManagerClass {
     if (hasBoss) {
       if (!this._inBossFight) {
         this.enterBossFight();
+      } else if (this._currentBgmState?.track.id !== 'boss') {
+        // A2 fix: Re-enter boss music if we returned from shop during boss fight
+        this.playBGM('boss');
       }
       return;
     }
@@ -690,7 +736,11 @@ class AudioManagerClass {
 
     const trackId = biomeToTrack[biome];
     if (trackId && this._currentBgmState?.track.id !== trackId) {
-      this.playBGM(trackId);
+      try {
+        this.playBGM(trackId);
+      } catch (e) {
+        console.warn('AudioManager: Failed to play BGM track', trackId, e);
+      }
     }
   }
 

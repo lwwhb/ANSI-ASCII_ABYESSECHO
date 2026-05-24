@@ -1,4 +1,4 @@
-export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear' | 'heartbeat' | 'stomachGrowl';
+export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear' | 'heartbeat' | 'stomachGrowl' | 'chainReaction' | 'relicAcquire' | 'enhanceSuccess' | 'enhanceFail' | 'bossPhase' | 'portalWarp';
 
 export interface SfxStage {
   freq: number;        // Start frequency in Hz
@@ -140,6 +140,64 @@ export const SFX_DEFS: SfxDef[] = [
     stages: [
       { freq: 120, freqEnd: 40, wave: 'triangle', duration: 0.15, gain: 0.2, gainEnd: 0 },
       { freq: 80, freqEnd: 30, wave: 'triangle', duration: 0.2, gain: 0.15, gainEnd: 0 },
+    ],
+  },
+
+  // 15. chainReaction: Explosive burst — rising crackle (200→800Hz sawtooth) + deep boom (100→40Hz)
+  {
+    id: 'chainReaction',
+    stages: [
+      { freq: 200, freqEnd: 800, wave: 'sawtooth', duration: 0.06, gain: 0.35 },
+      { freq: 800, freqEnd: 400, wave: 'square', duration: 0.05, gain: 0.3 },
+      { freq: 100, freqEnd: 40, wave: 'sawtooth', duration: 0.15, gain: 0.2, gainEnd: 0 },
+    ],
+  },
+
+  // 16. relicAcquire: Mystical shimmer — ascending sparkle (C5→E5→G5→C6 sine arpeggio)
+  {
+    id: 'relicAcquire',
+    stages: [
+      { freq: 523.25, wave: 'sine', duration: 0.08, gain: 0.3 },
+      { freq: 659.25, wave: 'sine', duration: 0.08, gain: 0.3 },
+      { freq: 784.00, wave: 'sine', duration: 0.08, gain: 0.3 },
+      { freq: 1046.50, wave: 'sine', duration: 0.15, gain: 0.25, gainEnd: 0 },
+    ],
+  },
+
+  // 17. enhanceSuccess: Metallic ping — high ring (1200→800Hz square, short)
+  {
+    id: 'enhanceSuccess',
+    stages: [
+      { freq: 1200, freqEnd: 800, wave: 'square', duration: 0.08, gain: 0.25 },
+      { freq: 800, wave: 'triangle', duration: 0.12, gain: 0.2, gainEnd: 0 },
+    ],
+  },
+
+  // 18. enhanceFail: Dull crunch — descending break (400→80Hz sawtooth + short noise)
+  {
+    id: 'enhanceFail',
+    stages: [
+      { freq: 400, freqEnd: 80, wave: 'sawtooth', duration: 0.1, gain: 0.3 },
+      { freq: 60, wave: 'square', duration: 0.08, gain: 0.15, gainEnd: 0 },
+    ],
+  },
+
+  // 19. bossPhase: Menacing shift — low rumble + staccato hit (60→30Hz sawtooth, then 400Hz square)
+  {
+    id: 'bossPhase',
+    stages: [
+      { freq: 60, freqEnd: 30, wave: 'sawtooth', duration: 0.2, gain: 0.35 },
+      { freq: 400, wave: 'square', duration: 0.08, gain: 0.3, gainEnd: 0 },
+    ],
+  },
+
+  // 20. portalWarp: Electronic warble — rapid up-down sweep (300→600→300Hz triangle)
+  {
+    id: 'portalWarp',
+    stages: [
+      { freq: 300, freqEnd: 600, wave: 'triangle', duration: 0.08, gain: 0.25 },
+      { freq: 600, freqEnd: 300, wave: 'triangle', duration: 0.08, gain: 0.25 },
+      { freq: 400, freqEnd: 200, wave: 'sine', duration: 0.1, gain: 0.2, gainEnd: 0 },
     ],
   },
 ];

@@ -12,6 +12,12 @@ html, body, #root {
   color: #cccccc;
 }
 
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #222244 #0a0a12;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -212,8 +218,11 @@ input:focus {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 4px;
   padding: 4px 8px;
+  max-width: 80vw;
   background: rgba(0,0,0,0.7);
   border-radius: 6px;
   border: 1px solid #333;
@@ -237,6 +246,7 @@ input:focus {
 .relic-item:hover {
   border-color: #ffd700;
   background: #222244;
+  transform: scale(1.15);
 }
 
 /* Enhancement Modal */
@@ -316,6 +326,15 @@ input:focus {
 .event-option-locked {
   opacity: 0.4;
   cursor: not-allowed !important;
+}
+
+.modal-overlay {
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 

@@ -96,7 +96,7 @@ export const RELIC_DEFS: Record<RelicId, RelicDef> = {
     id: RelicId.ElementResonance, name: '元素共鸣', icon: '🌀',
     rarity: RelicRarity.Rare,
     description: '同时拥有2种不同元素debuff时，ATK+25%',
-    elementAffinity: undefined,
+    elementAffinity: Element.Lightning,
   },
   [RelicId.EchoShard]: {
     id: RelicId.EchoShard, name: '回声碎片', icon: '💎',
@@ -140,7 +140,7 @@ export const RELIC_DEFS: Record<RelicId, RelicDef> = {
     id: RelicId.ChaosCore, name: '混沌核心', icon: '☄️',
     rarity: RelicRarity.Epic,
     description: '所有元素连锁伤害×2，但自身也受25%连锁伤害',
-    elementAffinity: undefined,
+    elementAffinity: Element.Lightning,
   },
   [RelicId.EternalFlame]: {
     id: RelicId.EternalFlame, name: '不朽之焰', icon: '🔥',
@@ -179,6 +179,6 @@ export const ELEMENT_RELICS: Record<Element, RelicId[]> = {
   [Element.None]: [],
   [Element.Fire]: [RelicId.FlameHeart, RelicId.EternalFlame],
   [Element.Ice]: [RelicId.FrostTouch],
-  [Element.Lightning]: [RelicId.ThunderMark],
+  [Element.Lightning]: [RelicId.ThunderMark, RelicId.ElementResonance, RelicId.ChaosCore],
   [Element.Poison]: [RelicId.PoisonGland],
 };

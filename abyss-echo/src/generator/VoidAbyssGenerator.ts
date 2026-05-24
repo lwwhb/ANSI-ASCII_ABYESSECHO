@@ -3,7 +3,7 @@ import { SeededRandom } from '../utils/random';
 import { BIOME_CONFIG } from '../constants';
 import {
   DungeonData, Room,
-  createTile, fillMap,
+  createTile,
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
   placeThemedRooms,
@@ -40,9 +40,10 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
   const width = config.mapWidth;
   const height = config.mapHeight;
 
-  // 1. Fill with void walls
-  const map = fillMap(biome, width, height);
+  // 1. Fill with void walls (M14 fix: removed unnecessary fillMap() call since we immediately overwrite with VoidWall)
+  const map: Tile[][] = [];
   for (let y = 0; y < height; y++) {
+    map[y] = [];
     for (let x = 0; x < width; x++) {
       map[y][x] = createTile(TileType.VoidWall, biome);
     }
@@ -157,7 +158,9 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
   if (specialFrags.length > 0) {
     if (rng.chance(config.shopChance)) {
       const shopFrag = rng.pick(specialFrags);
-      const frag = fragments[specialFrags.indexOf(shopFrag) + 1] || fragments[0];
+      const fragIdx = specialFrags.indexOf(shopFrag);
+      const frag = fragIdx >= 0 && fragIdx + 1 < fragments.length ? fragments[fragIdx + 1]
+        : fragIdx >= 0 ? fragments[0] : fragments[0];
       const ft = frag.floorTiles.find(t => map[t.y][t.x].type === TileType.Floor);
       if (ft) {
         shopPos = { x: ft.x, y: ft.y };

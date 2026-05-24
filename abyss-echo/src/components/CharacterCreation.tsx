@@ -28,8 +28,8 @@ const CharacterCreation: React.FC = () => {
       document.removeEventListener('click', resume);
       document.removeEventListener('touchstart', resume);
     };
-    document.addEventListener('click', resume);
-    document.addEventListener('touchstart', resume);
+    document.addEventListener('click', resume, { once: true });
+    document.addEventListener('touchstart', resume, { once: true });
     return () => {
       document.removeEventListener('click', resume);
       document.removeEventListener('touchstart', resume);

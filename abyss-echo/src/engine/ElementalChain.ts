@@ -43,13 +43,16 @@ export function getEnemyElementDebuffs(enemy: Enemy): Element[] {
   for (const e of enemy.statusEffects) {
     if (e.type === StatusEffectType.Burn) elements.push(Element.Fire);
     if (e.type === StatusEffectType.Freeze) elements.push(Element.Ice);
-    if (e.type === StatusEffectType.Poison || e.type === StatusEffectType.PoisonBlade) elements.push(Element.Poison);
+    if (e.type === StatusEffectType.Poison) elements.push(Element.Poison);
     if (e.type === StatusEffectType.Confusion) elements.push(Element.Lightning);
+    // Bleed maps to Fire (no Blood element; shares Fire reactions)
+    if (e.type === StatusEffectType.Bleed) elements.push(Element.Fire);
   }
   return elements;
 }
 
 // Check if a chain reaction can be triggered
+/** @deprecated Use checkChainReactionWithMap instead for proper terrain element detection */
 export function checkChainReaction(
   attackElement: Element,
   targetElements: Element[],
@@ -131,9 +134,15 @@ export function executeChainReaction(
     case 'steamBurst': {
       result.damage = baseDamage;
       result.affectedPositions.push(targetPos);
-      // Add adjacent positions within range
+      // Add adjacent positions within range (with bounds check)
+      const mapH = map.length;
+      const mapW = map[0]?.length ?? 0;
       for (const dir of [[0,-1],[0,1],[-1,0],[1,0]]) {
-        result.affectedPositions.push({ x: targetPos.x + dir[0], y: targetPos.y + dir[1] });
+        const nx = targetPos.x + dir[0];
+        const ny = targetPos.y + dir[1];
+        if (nx >= 0 && nx < mapW && ny >= 0 && ny < mapH) {
+          result.affectedPositions.push({ x: nx, y: ny });
+        }
       }
       break;
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GamePhase } from '../types';
 import { useGameStore } from '../store/gameStore';
 import MapView from './MapView';
@@ -36,6 +36,12 @@ const GameScreen: React.FC = () => {
   const [selectedInvIndex, setSelectedInvIndex] = useState(-1);
   const [showSuspendConfirm, setShowSuspendConfirm] = useState(false);
 
+  // Use ref to track latest selectedInvIndex without causing callback recreation
+  const selectedInvIndexRef = useRef(selectedInvIndex);
+  useEffect(() => {
+    selectedInvIndexRef.current = selectedInvIndex;
+  }, [selectedInvIndex]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (showManual) {
       if (e.key === 'm' || e.key === 'M' || e.key === 'Escape') setShowManual(false);
@@ -43,6 +49,17 @@ const GameScreen: React.FC = () => {
     }
     if (showHelp) {
       if (e.key === '?' || e.key === 'Escape') setShowHelp(false);
+      return;
+    }
+
+    // Suspend confirm keyboard handling
+    if (showSuspendConfirm) {
+      if (e.key === 'Enter') {
+        setShowSuspendConfirm(false);
+        useGameStore.getState().suspendAndQuit();
+      } else if (e.key === 'Escape') {
+        setShowSuspendConfirm(false);
+      }
       return;
     }
 
@@ -54,7 +71,10 @@ const GameScreen: React.FC = () => {
     }
     if (phase === GamePhase.Event) return;
     if (pendingForge) {
-      if (e.key === 'Escape') setPhase(GamePhase.Playing);
+      if (e.key === 'Escape') {
+        useGameStore.setState({ pendingForge: false });
+        setPhase(GamePhase.Playing);
+      }
       return;
     }
 
@@ -76,15 +96,15 @@ const GameScreen: React.FC = () => {
           break;
         case 'u':
         case 'U':
-          if (selectedInvIndex >= 0) { applyItem(selectedInvIndex); setSelectedInvIndex(-1); }
+          if (selectedInvIndexRef.current >= 0) { applyItem(selectedInvIndexRef.current); setSelectedInvIndex(-1); }
           break;
         case 'e':
         case 'E':
-          if (selectedInvIndex >= 0) { equipItem(selectedInvIndex); setSelectedInvIndex(-1); }
+          if (selectedInvIndexRef.current >= 0) { equipItem(selectedInvIndexRef.current); setSelectedInvIndex(-1); }
           break;
         case 'd':
         case 'D':
-          if (selectedInvIndex >= 0) { dropItem(selectedInvIndex); setSelectedInvIndex(-1); }
+          if (selectedInvIndexRef.current >= 0) { dropItem(selectedInvIndexRef.current); setSelectedInvIndex(-1); }
           break;
       }
       return;
@@ -149,7 +169,7 @@ const GameScreen: React.FC = () => {
         break;
       }
     }
-  }, [phase, movePlayer, waitTurn, pickupItem, descendStairs, toggleInventory, applyItem, equipItem, dropItem, applySkill, showHelp, showManual, selectedInvIndex, pendingForge, setPhase]);
+  }, [phase, movePlayer, waitTurn, pickupItem, descendStairs, toggleInventory, applyItem, equipItem, dropItem, applySkill, showHelp, showManual, pendingForge, setPhase, showSuspendConfirm]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -262,9 +282,9 @@ const GameScreen: React.FC = () => {
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       {showManual && <ManualOverlay onClose={() => setShowManual(false)} />}
       {showSuspendConfirm && (
-        <div style={{
+        <div className="modal-overlay" style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex',
+          backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', zIndex: 200,
         }}>
           <div style={{

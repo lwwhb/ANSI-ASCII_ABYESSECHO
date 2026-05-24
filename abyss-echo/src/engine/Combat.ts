@@ -37,7 +37,7 @@ export function calculateMeleeDamage(
   const elementalDamage = Math.max(0, damage - physicalDamage);
 
   // Critical hit: 5% + DEX/200
-  const critChance = 0.05 + attackerStats.dex / 200;
+  const critChance = Math.min(1.0, 0.05 + attackerStats.dex / 200);
   const critical = rng.chance(critChance);
   if (critical) {
     damage = Math.floor(damage * 1.5);
@@ -84,9 +84,13 @@ export function applyStatusEffect(
   target: { statusEffects: StatusEffect[] },
   effect: StatusEffect
 ): void {
+  // Guard: default duration to 1 if undefined
+  if (effect.duration === undefined) {
+    effect.duration = 1;
+  }
   const existing = target.statusEffects.find(e => e.type === effect.type);
   if (existing) {
-    existing.duration = Math.max(existing.duration, effect.duration);
+    existing.duration = Math.max(existing.duration ?? 0, effect.duration ?? 0);
   } else {
     target.statusEffects.push({ ...effect });
   }
@@ -95,14 +99,15 @@ export function applyStatusEffect(
 export function processStatusEffects(
   entity: { hp: number; statusEffects: StatusEffect[] },
   isPlayer: boolean
-): { damage: number; messages: string[]; skipped: boolean } {
+): { damage: number; messages: string[]; skipped: boolean; newStatusEffects: StatusEffect[] } {
   let totalDamage = 0;
   const messages: string[] = [];
   let skipped = false;
+  const updatedEffects: StatusEffect[] = [];
 
-  for (let i = entity.statusEffects.length - 1; i >= 0; i--) {
+  for (let i = 0; i < entity.statusEffects.length; i++) {
     const effect = entity.statusEffects[i];
-    effect.duration--;
+    const newDuration = effect.duration - 1;
 
     switch (effect.type) {
       case StatusEffectType.Poison:
@@ -123,7 +128,7 @@ export function processStatusEffects(
         break;
       case StatusEffectType.Confusion:
         messages.push(isPlayer ? '你头晕目眩，方向混乱！' : '目标陷入混乱！');
-        skipped = true; // BUG FIX: Confusion skips turn (random direction applied by caller)
+        skipped = true;
         break;
       case StatusEffectType.DefenseUp:
         messages.push(isPlayer ? '防御增强中...' : '');
@@ -133,12 +138,12 @@ export function processStatusEffects(
         break;
     }
 
-    if (effect.duration <= 0) {
-      entity.statusEffects.splice(i, 1);
+    if (newDuration > 0) {
+      updatedEffects.push({ ...effect, duration: newDuration });
     }
   }
 
-  return { damage: totalDamage, messages, skipped };
+  return { damage: totalDamage, messages, skipped, newStatusEffects: updatedEffects };
 }
 
 export function isFrozen(entity: { statusEffects: StatusEffect[] }): boolean {

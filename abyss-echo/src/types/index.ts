@@ -493,6 +493,8 @@ export interface Player extends EntityBase {
   // Temporary tracking fields (optional)
   _mirrorShieldUsed?: boolean;
   _lifeSeedUsedThisFloor?: boolean;
+  _fateWeaverCount?: number;
+  _permanentBuffsThisRun?: number; // Track total permanent stat buffs to prevent unlimited stacking
 }
 
 // --- Messages ---
@@ -574,6 +576,8 @@ export interface GameState {
   pendingForge: boolean;
   themedRooms: { room: { x: number; y: number; w: number; h: number; centerX: number; centerY: number; theme?: RoomTheme }; theme: RoomTheme }[];
   steamVentTurns: { x: number; y: number; spawnTurn: number }[];
+  floatingTexts: { x: number; y: number; text: string; color: string; age: number }[];
+  screenShake: number;
 }
 
 export interface HighScore {

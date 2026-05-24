@@ -2,7 +2,7 @@
 
 ## Overview
 
-This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.3**.
+This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.4**.
 
 ## Repository Structure
 
@@ -83,7 +83,7 @@ All commands run from `abyss-echo/`:
 ### Audio System
 - `AudioManager` singleton in `src/audio/AudioManager.ts` (~650 lines)
 - Step sequencer with lookahead scheduling (200ms ahead, 50ms interval)
-- 9 BGM tracks + 14 SFX defined in `musicData.ts` / `sfxData.ts`
+- 9 BGM tracks + 20 SFX defined in `musicData.ts` / `sfxData.ts`
 - Context-aware: auto-switches BGM based on floor biome, boss state, shop, game over
 - Features: crossfade (0.3s), boss overlay, SFX ducking (BGM volume drops during SFX)
 - Mute toggles synced to `GameState.musicEnabled` / `GameState.sfxEnabled`
@@ -91,7 +91,7 @@ All commands run from `abyss-echo/`:
 ### Component Architecture
 - `CharacterCreation.tsx` — title screen + class selection + "继续冒险" button + audio toggles
 - `App.tsx` (game) — main game UI in `components/App.tsx`, handles keyboard input, ESC suspend confirm dialog, HUD with audio controls
-- `MapView.tsx` — Canvas-based map renderer with position index (Map<string, T>) for O(1) entity lookup
+- `MapView.tsx` — Canvas-based map renderer with position index (Map<string, T>) for O(1) entity lookup, floating damage numbers, enemy status icons, screen shake
 - `MessageLog.tsx` — scrollable message log with smart auto-scroll (pauses on user scroll, resumes when scrolled to bottom)
 - `GameOverScreen.tsx` — death screen showing floor number and death cause
 - Modal components: `InventoryModal`, `TalentModal`, `ShopModal`, `EventModal`, `LevelUpModal`, `ManualOverlay`
@@ -102,7 +102,7 @@ All commands run from `abyss-echo/`:
 - `loadGame()` restores state, rebuilds FOV via `updateFOV()`, then **immediately deletes save** (anti save-scumming)
 - `deleteSave(reason)` called on: load, death (`handlePlayerDeath`), corruption (parse failure)
 - `suspendAndQuit()` — ESC key → confirm → save → return to title
-- Save data includes `version: "1.3.3"` field for future migration
+- Save data includes `version: "1.3.4"` field for future migration
 - `deathCause: string` in `GameState` — composed at death time, displayed on GameOverScreen; reset on restart/load
 - `GameState` fields are all JSON-serializable (no Maps/Sets/functions); `visibleTiles`/`rememberedMap` are in `GameStore` but not `GameState`, rebuilt on load
 
@@ -147,7 +147,7 @@ All commands run from `abyss-echo/`:
 - **Dungeon start/stairs randomization:** `pickStartAndStairs()` in `DungeonGenerator.ts` randomly selects start and stairs rooms with Manhattan distance > 30% of map diagonal, replacing the old BSP in-order left-top → right-bottom pattern
 - **MessageLog smart scroll:** Uses `useLayoutEffect` + `shouldAutoScroll` ref; auto-scrolls to bottom on new messages, pauses when user scrolls up, resumes when user scrolls within 40px of bottom
 - **Death cause:** `deathCause: string` in `GameState` — set by `handlePlayerDeath`, displayed on GameOverScreen; values like `被${enemy.name}击杀`, `因中毒致死`, `饥饿致死`; reset on restart/load
-- **Warning pulse system:** `warningPulse: 'none' | 'lowHp' | 'hunger' | 'both'` in `GameState` — triggers when HP < 30% maxHp and/or hunger ≤ 0. Audio: heartbeat SFX every 3 turns (low HP), stomachGrowl SFX every 5 turns (starving). Visual: `box-shadow inset` border pulse overlay in `App.tsx` — red (lowHp), yellow (hunger), orange (both), 1.5s animation cycle. Reset on death/restart/load.
+- **Warning pulse system:** `warningPulse: 'none' | 'lowHp' | 'hunger' | 'both'` in `GameState` — triggers when HP < 30% maxHp and/or hunger ≤ 0. Audio: heartbeat SFX every 3 turns (low HP), stomachGrowl SFX every 5 turns (starving); when both intervals coincide, alternate which one plays. Both SFX trigger BGM ducking (BGM drops to 0.15 for 200ms then fades back). Visual: `box-shadow inset` border pulse overlay in `App.tsx` — red (lowHp), yellow (hunger), orange (both), 1.5s animation cycle. Reset on death/restart/load.
 - The `processTurn` function does not deep-copy the map for BFS — it passes a local `currentMap` variable that may differ from `state.map` after lava tide changes
 - Skill crit system: base `skillCritChance = 0.05 + DEX/300`, modified by DeadlyStrike talent
 - Lucky talent gives both +5% drop chance AND +5% item rarity bonus
@@ -182,3 +182,9 @@ All commands run from `abyss-echo/`:
 - GameOverScreen: achievements and high scores are toggle buttons (mutually exclusive), not always-visible panels
 - closeShop BGM fix: `closeShop()` now calls `setPhase(Playing)` instead of directly setting phase, ensuring BGM context update
 - Cursed item selling: cursed items can be sold at 1/4 price (was blocked entirely)
+- Floating damage numbers: `floatingTexts` in `GameState` — array of `{ x, y, text, color, age }` objects. Created on damage/heal/chain/crit events, age incremented each turn in processTurn, removed when age >= 2. Rendered by MapView as floating text above target tile
+- Screen shake: `screenShake` in `GameState` — integer intensity (6=crit, 8=boss, 10=chain). Decremented by 2 per turn. MapView applies `ctx.translate(random, random)` when > 0, guaranteed reset via `try-finally`
+- processStatusEffects immutability: `processStatusEffects()` returns `newStatusEffects` array instead of splicing input; callers must assign `player.statusEffects = result.newStatusEffects` or `enemies[i] = { ...enemies[i], statusEffects: result.newStatusEffects }`
+- SFX gain node lifecycle: `playSfxStage()` creates oscillator + gainNode; both are disconnected via `osc.onended` callback to prevent audio graph memory leak
+- player.stats immutability: `player.stats` is a nested object on the shallow-copied `player`; must use `player = { ...player, stats: { ...player.stats, [stat]: value } }` instead of `player.stats[stat] = value`
+- All relic acquisitions play `relicAcquire` SFX: 12 points in gameStore (boss drops, elite drops, shop, events) all call `AudioManager.playSFX('relicAcquire')`

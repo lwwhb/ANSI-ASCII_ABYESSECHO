@@ -3,7 +3,8 @@ export class SeededRandom {
   private state: number;
 
   constructor(seed: number) {
-    this.state = seed;
+    // Normalize seed to 32-bit unsigned range to prevent overflow/truncation issues
+    this.state = (seed >>> 0) % 4294967296;
   }
 
   next(): number {
@@ -23,10 +24,12 @@ export class SeededRandom {
   }
 
   pick<T>(arr: T[]): T {
+    if (arr.length === 0) throw new Error('pick: empty array');
     return arr[this.nextInt(0, arr.length - 1)];
   }
 
   weightedPick<T extends { weight: number }>(items: T[]): T {
+    if (items.length === 0) throw new Error('weightedPick: empty array');
     const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
     let roll = this.next() * totalWeight;
     for (const item of items) {

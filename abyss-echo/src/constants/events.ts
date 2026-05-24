@@ -86,9 +86,9 @@ export const EXTENDED_EVENT_DEFS: ExtendedGameEventDef[] = [
       },
       {
         id: 'cursedChest_breakRune',
-        textZh: '🔮 破坏符文(需INT≥12)：获得物品，debuff减半',
+        textZh: '🔮 破坏符文(需INT≥10)：获得物品，debuff减半',
         effectId: 'cursedChest_breakRune',
-        condition: { type: 'stat', stat: 'int', min: 12 },
+        condition: { type: 'stat', stat: 'int', min: 10 },
         isRare: true,
       },
     ],
@@ -320,9 +320,9 @@ export const EXTENDED_EVENT_DEFS: ExtendedGameEventDef[] = [
       },
       {
         id: 'lostTraveler_talk',
-        textZh: '🔮 交谈(需INT≥12)：他告诉你1个隐藏房间 + 1个下层的秘密',
+        textZh: '🔮 交谈(需INT≥10)：他告诉你1个隐藏房间 + 1个下层的秘密',
         effectId: 'lostTraveler_talk',
-        condition: { type: 'stat', stat: 'int', min: 12 },
+        condition: { type: 'stat', stat: 'int', min: 10 },
         isRare: true,
       },
     ],

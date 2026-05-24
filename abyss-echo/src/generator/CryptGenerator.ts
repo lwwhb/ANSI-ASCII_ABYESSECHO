@@ -19,7 +19,7 @@ function carveWideCorridorReal(map: import('../types').Tile[][], x1: number, y1:
   while (x !== x2) {
     if (x >= 0 && x < width && y >= 0 && y < height) {
       for (let dy = 0; dy < 2 && y + dy < height; dy++) {
-        if (map[y + dy][x].type === TileType.Wall) {
+        if (y + dy >= 0 && map[y + dy][x].type === TileType.Wall) {
           map[y + dy][x] = createTile(TileType.Corridor, biome);
         }
       }
@@ -29,7 +29,7 @@ function carveWideCorridorReal(map: import('../types').Tile[][], x1: number, y1:
   while (y !== y2) {
     if (x >= 0 && x < width && y >= 0 && y < height) {
       for (let dx = 0; dx < 2 && x + dx < width; dx++) {
-        if (map[y][x + dx].type === TileType.Wall) {
+        if (x + dx >= 0 && map[y][x + dx].type === TileType.Wall) {
           map[y][x + dx] = createTile(TileType.Corridor, biome);
         }
       }

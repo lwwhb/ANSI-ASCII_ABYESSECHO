@@ -126,6 +126,7 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
 
   // 4. Add 2-3 shortcut bridges (1-width)
   for (let i = 0; i < rng.nextInt(2, 4); i++) {
+    if (islands.length < 2) break;
     const a = rng.nextInt(0, islands.length - 1);
     const b = rng.nextInt(0, islands.length - 1);
     if (a !== b) {

@@ -8,7 +8,7 @@ export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor
     const bossDef = BOSS_DEFS.find(b => b.id === defId);
     if (!bossDef) return null;
 
-    const scale = 1 + (floor - bossDef.minFloor) * 0.15;
+    const scale = 1 + Math.max(0, floor - bossDef.minFloor) * 0.15;
     return {
       id: genId(),
       defId: bossDef.id,
@@ -44,7 +44,7 @@ export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor
   const def = ENEMY_DEFS.find(d => d.id === defId);
   if (!def) return null;
 
-  const scale = 1 + (floor - def.minFloor) * 0.12;
+  const scale = 1 + Math.max(0, floor - def.minFloor) * 0.12;
   return {
     id: genId(),
     defId: def.id,

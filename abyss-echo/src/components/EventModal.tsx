@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useGameStore } from '../store/gameStore';
-import { EventOptionDef, EventCondition, Player } from '../types';
+import { EventOptionDef, EventCondition, Player, GameEventDef, ExtendedGameEventDef } from '../types';
 
 // Function to check if a condition is met
 function isConditionMet(condition: EventCondition | undefined, player: Player): boolean {
@@ -29,20 +29,46 @@ const EventModal: React.FC = () => {
   const player = useGameStore(s => s.player);
   const chooseEventChoice = useGameStore(s => s.chooseEventChoice);
 
+  // Check if event uses new format (options) or old format (choices)
+  const isNewFormat = currentEvent && 'options' in currentEvent;
+  const options: EventOptionDef[] = useMemo(() => {
+    if (!currentEvent) return [];
+    if (isNewFormat) return (currentEvent as ExtendedGameEventDef).options;
+    return (currentEvent as GameEventDef).choices.map((choice, idx: number) => ({
+      id: String(idx),
+      textZh: choice.textZh,
+      effectId: choice.effectId,
+    }));
+  }, [currentEvent, isNewFormat]);
+
+  // C9 fix: ESC to close, number keys to select options
+  useEffect(() => {
+    if (!currentEvent || !player) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        chooseEventChoice(-1);
+      }
+      const numKey = parseInt(e.key);
+      if (numKey >= 1 && numKey <= options.length) {
+        const idx = numKey - 1;
+        if (isConditionMet(options[idx].condition, player)) {
+          e.stopPropagation();
+          e.preventDefault();
+          chooseEventChoice(idx);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [currentEvent, player, options, chooseEventChoice]);
+
   if (!currentEvent || !player) return null;
 
-  // Check if event uses new format (options) or old format (choices)
-  const isNewFormat = 'options' in currentEvent;
-  const options = isNewFormat
-    ? (currentEvent as { options: EventOptionDef[] }).options
-    : (currentEvent as { choices: Array<{ textZh: string; effectId: string }> }).choices.map((choice, idx: number) => ({
-        id: String(idx),
-        textZh: choice.textZh,
-        effectId: choice.effectId,
-      }));
-
   return (
-    <div style={{
+    <div className="modal-overlay" style={{
       position: 'fixed',
       top: 0, left: 0, right: 0, bottom: 0,
       backgroundColor: 'rgba(0,0,0,0.85)',
@@ -86,7 +112,7 @@ const EventModal: React.FC = () => {
         {options.map((option: EventOptionDef & { id: string }, idx: number) => {
           const isRare = option.isRare;
           const conditionMet = isConditionMet(option.condition, player);
-          const baseStyle = {
+          const baseStyle: React.CSSProperties = {
             padding: '10px 12px',
             marginBottom: '6px',
             backgroundColor: isRare ? '#1a1030' : '#1a1a2e',
@@ -98,14 +124,16 @@ const EventModal: React.FC = () => {
             transition: 'all 0.15s',
             opacity: conditionMet ? 1 : 0.4,
           };
-          const hoverStyle = conditionMet
-            ? { borderColor: isRare ? '#aa44ff' : '#aa44ff', backgroundColor: '#222244' }
+          const hoverStyle: React.CSSProperties = conditionMet
+            ? { borderColor: '#aa44ff', backgroundColor: '#222244' }
             : {};
 
           return (
             <div
               key={option.id}
-              onClick={() => conditionMet && chooseEventChoice(idx)}
+              onClick={() => {
+                if (conditionMet) chooseEventChoice(idx);
+              }}
               style={baseStyle}
               onMouseEnter={(e) => {
                 Object.assign(e.currentTarget.style, hoverStyle);

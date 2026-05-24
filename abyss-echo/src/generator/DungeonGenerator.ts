@@ -128,8 +128,11 @@ export function createRooms(node: BSPNode, rng: SeededRandom): void {
 
   const roomW = rng.nextInt(MIN_ROOM_SIZE, Math.min(maxW, MAX_ROOM_SIZE));
   const roomH = rng.nextInt(MIN_ROOM_SIZE, Math.min(maxH, MAX_ROOM_SIZE));
-  const roomX = node.x + rng.nextInt(ROOM_PADDING, node.w - roomW - ROOM_PADDING);
-  const roomY = node.y + rng.nextInt(ROOM_PADDING, node.h - roomH - ROOM_PADDING);
+  const maxRoomX = node.w - roomW - ROOM_PADDING;
+  const maxRoomY = node.h - roomH - ROOM_PADDING;
+  if (maxRoomX < ROOM_PADDING || maxRoomY < ROOM_PADDING) return;
+  const roomX = node.x + rng.nextInt(ROOM_PADDING, maxRoomX);
+  const roomY = node.y + rng.nextInt(ROOM_PADDING, maxRoomY);
 
   node.room = {
     x: roomX,
@@ -329,29 +332,48 @@ function findRoomDoor(map: Tile[][], room: Room): Position | null {
       }
     }
   }
-  return { x: room.centerX, y: room.y };
+  // H10 fix: Fallback - find adjacent floor tile instead of using room boundary
+  // Check around room perimeter for a walkable tile
+  for (let y = room.y; y < room.y + room.h; y++) {
+    for (let x = room.x; x < room.x + room.w; x++) {
+      if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && map[y][x].walkable) {
+        return { x, y };
+      }
+    }
+  }
+  return { x: room.centerX, y: room.centerY };
 }
 
 function findRoomBoundaryWall(map: Tile[][], room: Room, rng: SeededRandom): Position | null {
   const candidates: Position[] = [];
+  // H8 fix: Secret wall placement should only target normal Wall tiles, not special tiles like Shop, Altar, etc.
+  const specialTileTypes = [TileType.Shop, TileType.Altar, TileType.Fountain, TileType.Inscription,
+                           TileType.LavaPool, TileType.CorruptionPool, TileType.VoidRift,
+                           TileType.HealCrystal, TileType.SpikeTrap, TileType.SteamVent,
+                           TileType.WeaponRack, TileType.Forge, TileType.Monument, TileType.Throne];
+
   // Check top and bottom walls of room
   for (let x = room.x; x < room.x + room.w; x++) {
     if (room.y > 0 && room.y < map.length && x >= 0 && x < map[0].length) {
-      if (map[room.y][x].type === TileType.Wall) candidates.push({ x, y: room.y });
+      const tile = map[room.y][x];
+      if (tile.type === TileType.Wall && !specialTileTypes.includes(tile.type)) candidates.push({ x, y: room.y });
     }
     const by = room.y + room.h;
     if (by > 0 && by < map.length && x >= 0 && x < map[0].length) {
-      if (map[by][x].type === TileType.Wall) candidates.push({ x, y: by });
+      const tile = map[by][x];
+      if (tile.type === TileType.Wall && !specialTileTypes.includes(tile.type)) candidates.push({ x, y: by });
     }
   }
   // Check left and right walls
   for (let y = room.y; y < room.y + room.h; y++) {
     if (room.x > 0 && y >= 0 && y < map.length && room.x < map[0].length) {
-      if (map[y][room.x].type === TileType.Wall) candidates.push({ x: room.x, y });
+      const tile = map[y][room.x];
+      if (tile.type === TileType.Wall && !specialTileTypes.includes(tile.type)) candidates.push({ x: room.x, y });
     }
     const rx = room.x + room.w;
     if (rx > 0 && rx < map[0].length && y >= 0 && y < map.length) {
-      if (map[y][rx].type === TileType.Wall) candidates.push({ x: rx, y });
+      const tile = map[y][rx];
+      if (tile.type === TileType.Wall && !specialTileTypes.includes(tile.type)) candidates.push({ x: rx, y });
     }
   }
   return candidates.length > 0 ? rng.pick(candidates) : null;
@@ -438,10 +460,13 @@ export function placeEliteAndSpecialRooms(
           }
         }
       }
-      // Replace wall with secret wall
-      const d = NEW_TILE_DEFAULTS['secretWall']!;
-      map[wallPos.y][wallPos.x] = makeTile(TileType.SecretWall, d.char, d.fg, d.bg, d.walkable, d.transparent);
-      secretWalls.push(wallPos);
+      // Replace wall with secret wall (H8 fix: only if current tile is not a special type)
+      const currentTile = map[wallPos.y][wallPos.x];
+      if (!currentTile.walkable) {
+        const d = NEW_TILE_DEFAULTS['secretWall']!;
+        map[wallPos.y][wallPos.x] = makeTile(TileType.SecretWall, d.char, d.fg, d.bg, d.walkable, d.transparent);
+        secretWalls.push(wallPos);
+      }
     }
   }
 
@@ -497,17 +522,30 @@ export function addEnvironment(map: Tile[][], rooms: Room[], biome: Biome, rng: 
   }
 }
 
-export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, enemyIds: string[]): { defId: string; pos: Position; isBoss: boolean }[] {
+export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, enemyIds: string[], map?: Tile[][]): { defId: string; pos: Position; isBoss: boolean }[] {
   const count = Math.floor(ENEMIES_PER_FLOOR_BASE + ENEMIES_PER_FLOOR_GROWTH * Math.sqrt(floor));
   const enemies: { defId: string; pos: Position; isBoss: boolean }[] = [];
   const spawnRooms = rooms.slice(1);
 
+  // H9 fix: helper to find walkable position in room
+  const findWalkablePos = (room: Room): Position | null => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const pos = {
+        x: rng.nextInt(room.x + 1, room.x + room.w - 2),
+        y: rng.nextInt(room.y + 1, room.y + room.h - 2),
+      };
+      if (!map || map[pos.y]?.[pos.x]?.walkable) return pos;
+    }
+    // Fallback: room center
+    const center = { x: room.centerX, y: room.centerY };
+    if (!map || map[center.y]?.[center.x]?.walkable) return center;
+    return null;
+  };
+
   // 先给每个非起始房间分配至少1只怪，确保无空房
   for (const room of spawnRooms) {
-    const pos = {
-      x: rng.nextInt(room.x + 1, room.x + room.w - 2),
-      y: rng.nextInt(room.y + 1, room.y + room.h - 2),
-    };
+    const pos = findWalkablePos(room);
+    if (!pos) continue;
     const defId = rng.pick(enemyIds);
     enemies.push({ defId, pos, isBoss: false });
   }
@@ -517,10 +555,8 @@ export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, en
   for (let i = 0; i < remaining; i++) {
     const room = rng.pick(spawnRooms);
     if (!room) continue;
-    const pos = {
-      x: rng.nextInt(room.x + 1, room.x + room.w - 2),
-      y: rng.nextInt(room.y + 1, room.y + room.h - 2),
-    };
+    const pos = findWalkablePos(room);
+    if (!pos) continue;
     const defId = rng.pick(enemyIds);
     enemies.push({ defId, pos, isBoss: false });
   }
@@ -687,8 +723,10 @@ export function placeThemedRooms(
       const targetX = room.centerX + terrain.offsetX;
       const targetY = room.centerY + terrain.offsetY;
 
-      // Check bounds
+      // Check bounds and only place on floor/corridor tiles (avoid overwriting walls, doors, special tiles)
       if (targetX >= 0 && targetX < mapWidth && targetY >= 0 && targetY < mapHeight) {
+        const currentTile = map[targetY][targetX];
+        if (currentTile.type !== TileType.Floor && currentTile.type !== TileType.Corridor) continue;
         const defaults = NEW_TILE_DEFAULTS[terrain.type];
         if (defaults) {
           // Place the terrain tile
@@ -706,7 +744,7 @@ export function placeThemedRooms(
             steamVentTurns.push({
               x: targetX,
               y: targetY,
-              spawnTurn: 0, // Will be relative to the turn when the floor is entered
+              spawnTurn: -1, // Will be set to current turn when floor is entered
             });
           }
         }

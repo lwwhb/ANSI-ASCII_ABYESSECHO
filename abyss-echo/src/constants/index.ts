@@ -796,10 +796,14 @@ export function getElementalModifier(attackElement: Element, defenderWeakness: E
 // ============================================================
 // Equipment Enhancement
 // ============================================================
+// +1: 100g / 100% → ATK/DEF ×1.15
+// +2: 250g / 85% → ATK/DEF ×1.30
+// +3: 500g / 60% → ATK/DEF ×1.50
+// Multiplicative: +1×1.15=1.15, +2×1.30=1.495, +3×1.50=2.24 (cumulative is intended)
 export const ENHANCE_COSTS = [100, 250, 500];
 export const ENHANCE_SUCCESS_RATES = [1.0, 0.85, 0.60];
-export const ENHANCE_ATK_MULT = [1.1, 1.2, 1.35];
-export const ENHANCE_DEF_MULT = [1.1, 1.2, 1.35];
+export const ENHANCE_ATK_MULT = [1.15, 1.30, 1.50];
+export const ENHANCE_DEF_MULT = [1.15, 1.30, 1.50];
 
 // ============================================================
 // Daily Challenge Seed

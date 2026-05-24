@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { RARITY_COLORS } from '../constants';
 import { getItemName } from '../entities/Items';
@@ -10,14 +10,63 @@ const ShopModal: React.FC = () => {
   const buyShopItem = useGameStore(s => s.buyShopItem);
   const sellItem = useGameStore(s => s.sellItem);
   const closeShop = useGameStore(s => s.closeShop);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const totalItems = shopItems.length + (player?.inventory.length ?? 0);
+  const totalItemsRef = useRef(totalItems);
+  useEffect(() => { totalItemsRef.current = totalItems; });
+  const canBuy = (index: number) => {
+    if (index >= shopItems.length) return false;
+    const item = shopItems[index];
+    return player!.gold >= item.value && player!.inventory.length < getMaxInventorySize(player!);
+  };
+  const canSell = (index: number) => {
+    const inventoryIndex = index - shopItems.length;
+    if (inventoryIndex < 0 || inventoryIndex >= player!.inventory.length) return false;
+    return true;
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      if (e.key === 'Escape') {
+        closeShop();
+        return;
+      }
+
+      if (e.key === 'ArrowDown') {
+        if (selectedIndex < totalItemsRef.current - 1) {
+          setSelectedIndex(selectedIndex + 1);
+        }
+      } else if (e.key === 'ArrowUp') {
+        if (selectedIndex > 0) {
+          setSelectedIndex(selectedIndex - 1);
+        }
+      } else if (e.key === 'Enter') {
+        if (selectedIndex < shopItems.length && canBuy(selectedIndex)) {
+          buyShopItem(selectedIndex);
+        } else if (selectedIndex >= shopItems.length) {
+          const inventoryIndex = selectedIndex - shopItems.length;
+          if (canSell(selectedIndex)) {
+            sellItem(inventoryIndex);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [selectedIndex, totalItems, shopItems, player, closeShop, buyShopItem, sellItem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!player) return null;
 
   return (
-    <div style={{
+    <div className="modal-overlay" style={{
       position: 'fixed',
       top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.8)',
+      backgroundColor: 'rgba(0,0,0,0.85)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -50,14 +99,17 @@ const ShopModal: React.FC = () => {
 
         {/* Items for sale */}
         <div style={{ color: '#888899', fontSize: '12px', marginBottom: '8px' }}>出售的物品:</div>
-        {shopItems.map((item, index) => (
-          <div key={item.id} style={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '8px',
-            borderBottom: '1px solid #111122',
-            fontSize: '13px',
-          }}>
+        {shopItems.map((item, index) => {
+          const isSelected = selectedIndex === index;
+          return (
+            <div key={item.id} style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '8px',
+              borderBottom: '1px solid #111122',
+              fontSize: '13px',
+              backgroundColor: isSelected ? '#1a1a3e' : 'transparent',
+            }}>
             <span style={{ color: item.fg, width: '20px' }}>{item.char}</span>
             <span style={{ color: RARITY_COLORS[item.rarity], flex: 1 }}>{getItemName(item)}</span>
             <span style={{ color: '#ffcc44', marginRight: '12px', fontSize: '12px' }}>{item.value}💰</span>
@@ -78,7 +130,8 @@ const ShopModal: React.FC = () => {
               购买
             </button>
           </div>
-        ))}
+          );
+        })}
 
         {/* Sell items from inventory */}
         {player.inventory.length > 0 && (
@@ -87,6 +140,8 @@ const ShopModal: React.FC = () => {
               出售你的物品 (半价):
             </div>
             {player.inventory.map((item, index) => {
+              const globalIndex = shopItems.length + index;
+              const isSelected = selectedIndex === globalIndex;
               const sellPrice = item.cursed ? Math.max(1, Math.floor(item.value / 4)) : Math.floor(item.value / 2);
               return (
                 <div key={item.id} style={{
@@ -95,6 +150,7 @@ const ShopModal: React.FC = () => {
                   padding: '6px 8px',
                   borderBottom: '1px solid #111122',
                   fontSize: '12px',
+                  backgroundColor: isSelected ? '#1a1a3e' : 'transparent',
                 }}>
                   <span style={{ color: item.fg, width: '20px' }}>{item.char}</span>
                   <span style={{ color: RARITY_COLORS[item.rarity], flex: 1 }}>
@@ -127,8 +183,13 @@ const ShopModal: React.FC = () => {
           marginTop: '12px',
           paddingTop: '8px',
           borderTop: '1px solid #222244',
+          borderTopRightRadius: '4px',
+          borderTopLeftRadius: '4px',
           textAlign: 'center',
         }}>
+          <div style={{ color: '#666677', fontSize: '11px', marginBottom: '8px' }}>
+            ↑↓ 选择 | Enter 购买/出售
+          </div>
           <button
             onClick={closeShop}
             style={{

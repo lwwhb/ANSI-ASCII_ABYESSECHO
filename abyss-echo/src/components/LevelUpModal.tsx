@@ -30,16 +30,20 @@ const LevelUpModal: React.FC = () => {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!player) return;
     if (STAT_KEY_MAP[e.key] && player.statPoints > 0) {
+      e.stopPropagation();
+      e.preventDefault();
       allocateStat(STAT_KEY_MAP[e.key]);
     }
     if (e.key === 'Enter' && player.statPoints === 0) {
+      e.stopPropagation();
+      e.preventDefault();
       confirmLevelUp();
     }
   }, [player, allocateStat, confirmLevelUp]);
 
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [handleKeyDown]);
 
   if (!player) return null;
@@ -47,7 +51,7 @@ const LevelUpModal: React.FC = () => {
   const hasPending = Object.values(pendingAllocations).some(v => (v || 0) > 0);
 
   return (
-    <div style={{
+    <div className="modal-overlay" style={{
       position: 'fixed',
       top: 0,
       left: 0,

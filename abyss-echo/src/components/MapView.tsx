@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
+import { StatusEffectType } from '../types';
 
 const CELL_SIZE = 16;
 const FONT_SIZE = 14;
@@ -10,6 +11,8 @@ const MapView: React.FC = () => {
   const player = useGameStore(s => s.player);
   const enemies = useGameStore(s => s.enemies);
   const items = useGameStore(s => s.items);
+  const floatingTexts = useGameStore(s => s.floatingTexts);
+  const screenShake = useGameStore(s => s.screenShake);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -30,6 +33,14 @@ const MapView: React.FC = () => {
     // Clear
     ctx.fillStyle = '#0a0a12';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Apply screen shake
+    try {
+      if (screenShake > 0) {
+        const shakeX = (Math.random() - 0.5) * screenShake * 2;
+        const shakeY = (Math.random() - 0.5) * screenShake * 2;
+        ctx.translate(shakeX, shakeY);
+      }
 
     // Build position lookup maps for O(1) access
     const itemMap = new Map<string, typeof items[0]>();
@@ -79,29 +90,82 @@ const MapView: React.FC = () => {
             char = player.char;
             fg = player.fg;
           }
+
+          const px = x * CELL_SIZE;
+          const py = y * CELL_SIZE;
+
+          // Draw background
+          ctx.fillStyle = bg;
+          ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+
+          // Draw character
+          if (char !== ' ') {
+            ctx.fillStyle = fg;
+            ctx.fillText(char, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
+          }
+
+          // Status effect icons above enemy
+          if (enemyHere && enemyHere.statusEffects.length > 0) {
+            const icons: string[] = [];
+            for (const se of enemyHere.statusEffects) {
+              if (se.type === StatusEffectType.Poison) icons.push('☠');
+              else if (se.type === StatusEffectType.Burn) icons.push('🔥');
+              else if (se.type === StatusEffectType.Freeze) icons.push('❄');
+              else if (se.type === StatusEffectType.Confusion) icons.push('⚡');
+              else if (se.type === StatusEffectType.Bleed) icons.push('🩸');
+            }
+            ctx.font = '8px sans-serif';
+            ctx.fillStyle = '#ff4444';
+            const iconStr = icons.slice(0, 3).join('');
+            ctx.fillText(iconStr, px + CELL_SIZE / 2, py - 2);
+            // Restore font
+            ctx.font = `${FONT_SIZE}px "Courier New", monospace`;
+          }
         } else if (tile.remembered) {
           char = tile.rememberedChar || tile.char;
-          fg = dimColor(tile.rememberedFg || tile.fg, 0.35);
-          bg = dimColor(tile.rememberedBg || tile.bg, 0.35);
+          fg = dimColor(tile.rememberedFg || tile.fg, 0.45);
+          bg = dimColor(tile.rememberedBg || tile.bg, 0.45);
+
+          const px = x * CELL_SIZE;
+          const py = y * CELL_SIZE;
+
+          // Draw background
+          ctx.fillStyle = bg;
+          ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+
+          // Draw character
+          if (char !== ' ') {
+            ctx.fillStyle = fg;
+            ctx.fillText(char, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
+          }
         } else {
           continue; // Skip completely unseen tiles (already cleared to black)
         }
-
-        const px = x * CELL_SIZE;
-        const py = y * CELL_SIZE;
-
-        // Draw background
-        ctx.fillStyle = bg;
-        ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
-
-        // Draw character
-        if (char !== ' ') {
-          ctx.fillStyle = fg;
-          ctx.fillText(char, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
-        }
       }
     }
-  }, [map, player, enemies, items]);
+
+    // Render floating texts after main rendering
+    for (const ft of (floatingTexts || [])) {
+      const px = ft.x * CELL_SIZE + CELL_SIZE / 2;
+      const py = ft.y * CELL_SIZE - (ft.age * 6); // Float upward
+      const alpha = Math.max(0, 1 - ft.age * 0.5);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = ft.color;
+      ctx.font = 'bold 12px "Courier New", monospace';
+      ctx.fillText(ft.text, px, py);
+    }
+    ctx.globalAlpha = 1;
+
+    // Reset transform after rendering (guaranteed by finally)
+    } finally {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
+    // Cleanup
+    return () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [map, player, enemies, items, floatingTexts, screenShake]);
 
   if (!player || map.length === 0) return null;
 
@@ -130,4 +194,4 @@ function dimColor(hex: string, factor: number): string {
   return `rgb(${Math.floor(r * factor)},${Math.floor(g * factor)},${Math.floor(b * factor)})`;
 }
 
-export default React.memo(MapView);
+export default MapView;

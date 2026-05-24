@@ -14,7 +14,15 @@ const BossBlessingModal: React.FC = () => {
   if (!options) return null;
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay" style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.85)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 100,
+    }}>
       <div className="modal boss-blessing-modal">
         <h2>🏆 Boss祝福</h2>
         <p>击败了强大的敌人！选择一项永久祝福：</p>

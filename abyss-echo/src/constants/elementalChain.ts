@@ -48,7 +48,7 @@ export const CHAIN_REACTIONS: ChainReactionDef[] = [
     id: 'corruptDischarge',
     nameZh: '腐化放电',
     elements: [Element.Lightning, Element.Poison],
-    damageMultiplier: 2.0,
+    damageMultiplier: 1.4,
     range: 2,
     additionalEffect: 'jumpToOtherPoisoned',
     messageTemplate: '⚡🧪 腐化放电！毒素在电弧中剧烈反应！',
@@ -88,7 +88,8 @@ export const CHAIN_REACTIONS: ChainReactionDef[] = [
 export const TERRAIN_ELEMENTS: Partial<Record<TileType, Element[]>> = {
   [TileType.ShallowWater]: [Element.Ice, Element.Lightning],
   [TileType.LavaPool]: [Element.Fire],
-  [TileType.CooledLava]: [],
+  [TileType.Lava]: [Element.Fire],
+  [TileType.CooledLava]: [Element.Fire],
   [TileType.PoisonGas]: [Element.Poison],
   [TileType.SteamVent]: [Element.Ice, Element.Lightning],
   [TileType.WebFloor]: [],
