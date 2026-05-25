@@ -5,10 +5,10 @@ import {
   StatusEffectType, ItemType, PotionEffect, ScrollEffect, Element, Rarity,
   WeaponItem, ArmorItem, RingItem, AmuletItem, PotionItem, ScrollItem, FoodItem, FloorItem,
   GameEventDef, ExtendedGameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
-  BossBlessing, EliteAffix, RelicId, RoomTheme,
+  BossBlessing, EliteAffix, RelicId, RoomTheme, HiddenRoomType, RelicRarity,
 } from '../types';
-import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS, ENHANCE_COSTS, ENHANCE_SUCCESS_RATES, ENHANCE_ATK_MULT, ENHANCE_DEF_MULT } from '../constants';
-import { RELIC_DEFS } from '../constants/relics';
+import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS, ENHANCE_COSTS, ENHANCE_SUCCESS_RATES, ENHANCE_ATK_MULT, ENHANCE_DEF_MULT, ELITE_REGEN_RATE, ENEMY_SPECIAL_CHANCE } from '../constants';
+import { RELIC_DEFS, RELICS_BY_RARITY } from '../constants/relics';
 import { THEMED_ROOM_CONFIGS } from '../constants/themedRooms';
 import { EXTENDED_EVENT_DEFS } from '../constants/events';
 import { hasRelic, getRelicAtkModifier, getRelicGoldModifier,
@@ -114,6 +114,50 @@ function saveGame(state: GameStore) {
   } catch { /* ignore storage full */ }
 }
 
+// Default values for GameState fields that may be missing in older saves
+const SAVE_FIELD_DEFAULTS: Partial<GameState> = {
+  achievements: [],
+  legacyItem: null,
+  isDailyChallenge: false,
+  shopItems: [],
+  currentEvent: null,
+  screenFlash: null,
+  skillUseCount: 0,
+  shopBuyCount: 0,
+  musicEnabled: true,
+  sfxEnabled: true,
+  voidCorruption: { str: 0, dex: 0, int: 0, vit: 0 },
+  currentFragmentTurns: 0,
+  lavaTideActive: false,
+  lavaTideTurnsRemaining: 0,
+  lavaTideTiles: [],
+  extraTurnCost: 0,
+  deathCause: '',
+  warningPulse: 'none',
+  pendingIdentify: false,
+  pendingSacrifice: false,
+  pendingAllocations: {},
+  bossBlessingPending: false,
+  lastBossDefId: null,
+  secretWalls: [],
+  floorDescriptionShown: false,
+  pendingForge: false,
+  themedRooms: [],
+  steamVentTurns: [],
+  floatingTexts: [],
+  screenShake: 0,
+};
+
+function migrateSaveState(state: Record<string, unknown>): GameState {
+  const migrated = { ...state };
+  for (const [key, defaultValue] of Object.entries(SAVE_FIELD_DEFAULTS)) {
+    if (!(key in migrated) || migrated[key] === undefined) {
+      (migrated as Record<string, unknown>)[key] = defaultValue;
+    }
+  }
+  return migrated as unknown as GameState;
+}
+
 function loadSave(): { state: GameState; message?: string } | null {
   try {
     const data = localStorage.getItem(SAVE_KEY);
@@ -123,7 +167,12 @@ function loadSave(): { state: GameState; message?: string } | null {
       deleteSave('存档格式损坏，无法恢复');
       return null;
     }
-    return { state: parsed.state, message: '存档已恢复' };
+    const migratedState = migrateSaveState(parsed.state);
+    const isOldVersion = parsed.version !== SAVE_VERSION;
+    return {
+      state: migratedState,
+      message: isOldVersion ? '存档已恢复（版本已迁移）' : '存档已恢复',
+    };
   } catch {
     deleteSave('存档数据损坏，无法读取');
     return null;
@@ -183,7 +232,10 @@ const _EFFECT_NAME_ZH: Record<EquipmentEffect, string> = {
 };
 
 function getTalentModifiedHungerRate(player: Player): number {
-  return hasTalent(player, 'ironStomach') ? HUNGER_RATE * 0.5 : HUNGER_RATE;
+  let rate = HUNGER_RATE;
+  if (hasTalent(player, 'ironStomach')) rate *= 0.5;
+  if (hasRelic(player, RelicId.HungerRing)) rate *= 0.5;
+  return rate;
 }
 
 function getTalentModifiedDamageReduction(player: Player): number {
@@ -214,7 +266,9 @@ function getTalentModifiedElementalDamage(player: Player, baseDamage: number): n
 }
 
 function getTalentModifiedVisionRadius(player: Player): number {
-  return hasTalent(player, 'nightVision') ? player.visionRadius + 2 : player.visionRadius;
+  let radius = hasTalent(player, 'nightVision') ? player.visionRadius + 2 : player.visionRadius;
+  if (player.relics.includes(RelicId.DarkVision)) radius += 2;
+  return radius;
 }
 
 function getTalentModifiedTenaciousDefense(player: Player): number {
@@ -899,7 +953,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
         // Elite Regen: Heal 5% max HP per turn
         if (enemies[i].isElite && enemies[i].eliteAffix === EliteAffix.Regen && enemies[i].hp > 0) {
-          const healAmt = Math.max(1, Math.floor(enemies[i].maxHp * 0.05));
+          const healAmt = Math.max(1, Math.floor(enemies[i].maxHp * ELITE_REGEN_RATE));
           enemies[i].hp = Math.min(enemies[i].maxHp, enemies[i].hp + healAmt);
         }
 
@@ -1213,6 +1267,42 @@ export const useGameStore = create<GameStore>((set, get) => {
       screenShake: newScreenShake,
     });
     updateFOV();
+
+    // Hidden room BGM: switch to secretRoom track when standing on HiddenFloor
+    const finalState = get();
+    if (finalState.player && finalState.map) {
+      const playerTile = finalState.map[finalState.player.pos.y]?.[finalState.player.pos.x];
+      if (playerTile?.type === TileType.HiddenFloor) {
+        AudioManager.crossfade('secretRoom');
+      } else {
+        // Restore biome BGM when leaving hidden room
+        const biome = getBiomeForFloor(finalState.currentFloor);
+        const hasBoss = finalState.enemies.some(e => e.isBoss && e.hp > 0);
+        AudioManager.updateContext('playing', finalState.currentFloor, hasBoss, biome);
+      }
+    }
+
+    // AbyssWhisper relic: reveal 1 adjacent SecretWall per floor
+    if (finalState.player?.relics.includes(RelicId.AbyssWhisper) && finalState.secretWalls.length > 0) {
+      const revealedKey = `_abyssWhisperF${finalState.currentFloor}`;
+      if (!(finalState.player as any)[revealedKey]) {
+        for (const swPos of finalState.secretWalls) {
+          const dist = Math.abs(swPos.x - finalState.player.pos.x) + Math.abs(swPos.y - finalState.player.pos.y);
+          if (dist <= 3 && finalState.visibleTiles.has(`${swPos.x},${swPos.y}`)) {
+            const newMap = finalState.map.map(row => row.map(t => ({ ...t })));
+            const swTile = newMap[swPos.y][swPos.x];
+            if (swTile.type === TileType.SecretWall) {
+              newMap[swPos.y][swPos.x] = { ...swTile, char: '░', fg: '#aa88cc', transparent: true };
+              addMessages([msg('深渊低语揭示了一道暗墙...', MessageCategory.System, '#aa88cc')]);
+              set({ map: newMap });
+            }
+            break;
+          }
+        }
+        const p = { ...finalState.player, [revealedKey]: true };
+        set({ player: p });
+      }
+    }
   }
 
   function handleSpecialAbility(enemy: Enemy, player: Player, enemies: Enemy[], messages: Message[], rng: SeededRandom) {
@@ -1243,7 +1333,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         break;
       }
       case 'petrify': {
-        if (rng.chance(0.3)) {
+        if (rng.chance(ENEMY_SPECIAL_CHANCE)) {
           player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Freeze, duration: 2, damage: 0 }];
           messages.push(msg(`${enemy.name}的凝视将你石化了！`, MessageCategory.Combat, '#8888aa'));
         }
@@ -1344,7 +1434,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         break;
       }
       case 'glare': {
-        if (rng.chance(0.3)) {
+        if (rng.chance(ENEMY_SPECIAL_CHANCE)) {
           player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Freeze, duration: 1, damage: 0 }];
           messages.push(msg(`${enemy.name}的强光令你短暂失明！`, MessageCategory.Combat, '#aaffcc'));
         }
@@ -1630,6 +1720,104 @@ export const useGameStore = create<GameStore>((set, get) => {
       items.push({ item: createRandomItem(floor, rng, true, 0, biomeConfig.foodDropMultiplier), pos });
     }
 
+    // Create items/enemies for hidden rooms
+    const enemyIds = biomeConfig.enemyIds ?? ['skeleton'];
+    for (const hr of dungeon.hiddenRooms ?? []) {
+      const availablePositions = hr.positions.filter(p => !(p.x === hr.secretWallPos.x && p.y === hr.secretWallPos.y));
+      if (availablePositions.length === 0) continue;
+
+      switch (hr.type) {
+        case HiddenRoomType.Slaughterhouse: {
+          const foodCount = rng.nextInt(2, 4);
+          for (let i = 0; i < foodCount && availablePositions.length > 0; i++) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            const foodIdx = floor < 10
+              ? rng.nextInt(0, 2)
+              : floor < 20
+                ? rng.nextInt(1, 3)
+                : rng.nextInt(2, 4);
+            items.push({ item: createFood(foodIdx), pos });
+          }
+          break;
+        }
+        case HiddenRoomType.Treasury: {
+          if (availablePositions.length > 0) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            items.push({ item: createRandomItem(floor, rng, false, 3, 0), pos });
+          }
+          break;
+        }
+        case HiddenRoomType.Armory: {
+          const equipCount = rng.nextInt(1, 2);
+          for (let i = 0; i < equipCount && availablePositions.length > 0; i++) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            const luckBonus = floor < 10 ? 3 : floor < 20 ? 6 : 10;
+            items.push({ item: createRandomItem(floor, rng, false, luckBonus, 0), pos });
+          }
+          break;
+        }
+        case HiddenRoomType.AlchemyLab: {
+          const potionCount = rng.nextInt(2, 3);
+          for (let i = 0; i < potionCount && availablePositions.length > 0; i++) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            items.push({ item: createRandomItem(floor, rng, false, 0, 0), pos });
+          }
+          if (availablePositions.length > 0) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            items.push({ item: createScroll(rng.nextInt(0, 8)), pos });
+          }
+          break;
+        }
+        case HiddenRoomType.Library: {
+          for (let i = 0; i < 2 && availablePositions.length > 0; i++) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            items.push({ item: createScroll(rng.nextInt(0, 8)), pos });
+          }
+          break;
+        }
+        case HiddenRoomType.MonsterNest: {
+          const nestEnemyCount = rng.nextInt(2, 3);
+          for (let i = 0; i < nestEnemyCount && availablePositions.length > 0; i++) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            const defId = rng.pick(enemyIds);
+            const affixValues = Object.values(EliteAffix);
+            const affix = rng.pick(affixValues) as EliteAffix;
+            const elite = createEliteEnemy(defId, pos, floor, affix);
+            if (elite) {
+              if (floor >= 21) {
+                elite.hp = Math.floor(elite.hp * 1.5);
+                elite.maxHp = elite.hp;
+              }
+              enemies.push(elite);
+            }
+          }
+          break;
+        }
+        case HiddenRoomType.FungiPatch: {
+          const mushCount = rng.nextInt(1, 2);
+          for (let i = 0; i < mushCount && availablePositions.length > 0; i++) {
+            const posIdx = rng.nextInt(0, availablePositions.length - 1);
+            const pos = availablePositions.splice(posIdx, 1)[0];
+            items.push({ item: createFood(3), pos });
+          }
+          break;
+        }
+        case HiddenRoomType.AncientTomb:
+        case HiddenRoomType.MagicSpring:
+        case HiddenRoomType.HiddenAltar:
+        case HiddenRoomType.VoidRift:
+        case HiddenRoomType.Empty:
+          break;
+      }
+    }
+
     // Create shop items if there's a shop
     let shopItems: Item[] = [];
     if (dungeon.shopPos) {
@@ -1769,11 +1957,19 @@ export const useGameStore = create<GameStore>((set, get) => {
         saveLegacyItem(null); // Clear legacy after use
       }
 
-      // Starting supplies: 2 bread + 1 rations + 1 jerky
+      // Starting supplies: 2 bread + 1 rations + 1 jerky (+ Mage: extra bread + ration)
       player.inventory.push(createFood(0)); // 面包
       player.inventory.push(createFood(0)); // 面包
       player.inventory.push(createFood(1)); // 干粮
       player.inventory.push(createFood(2)); // 肉干
+      if (charClass === CharacterClass.Mage) {
+        player.inventory.push(createFood(0)); // 面包 (法师额外补给)
+        player.inventory.push(createFood(1)); // 干粮 (法师额外补给)
+      }
+      if (charClass === CharacterClass.Warrior || charClass === CharacterClass.Rogue) {
+        player.inventory.push(createFood(0)); // 面包 (战士/盗贼额外补给)
+        player.inventory.push(createFood(1)); // 干粮 (战士/盗贼额外补给)
+      }
 
       set({
         phase: GamePhase.Playing,
@@ -2314,8 +2510,180 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       // SecretWall: player passes through
       if (tile.type === TileType.SecretWall) {
+        // Open the secret wall: make it transparent so FOV reveals the hidden room
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], transparent: true };
+        // Flood-fill reveal all connected HiddenFloor tiles (the whole hidden room)
+        const toReveal: Position[] = [{ x: nx, y: ny }];
+        const visited = new Set<string>();
+        while (toReveal.length > 0) {
+          const p = toReveal.pop()!;
+          const key = `${p.x},${p.y}`;
+          if (visited.has(key)) continue;
+          visited.add(key);
+          for (const [ddx, ddy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+            const ax = p.x + ddx;
+            const ay = p.y + ddy;
+            if (ay >= 0 && ay < newMap.length && ax >= 0 && ax < newMap[0].length) {
+              if (newMap[ay][ax].type === TileType.HiddenFloor && !visited.has(`${ax},${ay}`)) {
+                newMap[ay][ax] = { ...newMap[ay][ax], transparent: true };
+                toReveal.push({ x: ax, y: ay });
+              }
+            }
+          }
+        }
+        // EchoHeart relic: full heal on entering hidden room
+        if (player.relics.includes(RelicId.EchoHeart)) {
+          player.hp = player.maxHp;
+          player.mp = player.maxMp;
+          addMessages([msg('回响之心闪耀，HP/MP全回复！', MessageCategory.Item, '#cc88ff')]);
+        }
         player.pos = { x: nx, y: ny };
         addMessages([msg('你穿过了一道暗墙！', MessageCategory.System, '#aa88aa')]);
+        AudioManager.playSFX('door');
+        set({ player, map: newMap });
+        processTurn();
+        return;
+      }
+
+      // GoldPile: Pick up gold (20-80 based on floor depth)
+      if (tile.type === TileType.GoldPile) {
+        const goldAmount = Math.floor(20 + Math.sqrt(state.currentFloor) * 15 + rng.nextInt(0, 20));
+        player.gold += goldAmount;
+        player.pos = { x: nx, y: ny };
+        addMessages([msg(`你拾取了${goldAmount}枚金币！`, MessageCategory.Item, '#ffcc44')]);
+        AudioManager.playSFX('coin');
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.HiddenFloor, char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true, transparent: true };
+        set({ player, map: newMap });
+        processTurn();
+        return;
+      }
+
+      // MagicSpring: Full heal + temporary defense buff
+      if (tile.type === TileType.MagicSpring) {
+        player.hp = player.maxHp;
+        player.mp = player.maxMp;
+        player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 10, damage: 5 }];
+        player.pos = { x: nx, y: ny };
+        addMessages([msg('魔法泉！HP/MP全回复，防御+5持续10回合！', MessageCategory.Item, '#44ccff')]);
+        AudioManager.playSFX('magicSpring');
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.HiddenFloor, char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true, transparent: true };
+        set({ player, map: newMap });
+        processTurn();
+        return;
+      }
+
+      // HiddenAltar: Permanent stat +1 or relic
+      if (tile.type === TileType.HiddenAltar) {
+        player.pos = { x: nx, y: ny };
+        if (rng.next() < 0.6) {
+          const stat = rng.pick(['str', 'dex', 'int', 'vit'] as const);
+          const statName = stat === 'str' ? '力量' : stat === 'dex' ? '灵巧' : stat === 'int' ? '智慧' : '活力';
+          player.bonusStats = { ...player.bonusStats, [stat]: player.bonusStats[stat] + 1 };
+          addMessages([msg(`祭坛赐福！${statName}永久+1！`, MessageCategory.Item, '#cc88ff')]);
+          AudioManager.playSFX('relicAcquire');
+        } else {
+          const commonRelics = RELICS_BY_RARITY[RelicRarity.Common];
+          const availableRelics = commonRelics.filter(r => !player.relics.includes(r));
+          if (availableRelics.length > 0) {
+            const relicId = rng.pick(availableRelics) as RelicId;
+            player.relics = [...player.relics, relicId];
+            addMessages([msg(`祭坛赐予你${RELIC_DEFS[relicId].name}！`, MessageCategory.Item, '#cc88ff')]);
+            AudioManager.playSFX('relicAcquire');
+          } else {
+            const stat = rng.pick(['str', 'dex', 'int', 'vit'] as const);
+            const statName = stat === 'str' ? '力量' : stat === 'dex' ? '灵巧' : stat === 'int' ? '智慧' : '活力';
+            player.bonusStats = { ...player.bonusStats, [stat]: player.bonusStats[stat] + 1 };
+            addMessages([msg(`祭坛赐福！${statName}永久+1！`, MessageCategory.Item, '#cc88ff')]);
+            AudioManager.playSFX('relicAcquire');
+          }
+        }
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.HiddenFloor, char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true, transparent: true };
+        set({ player, map: newMap });
+        processTurn();
+        return;
+      }
+
+      // LibraryShelf: Gain extra scroll + 10% chance talent point
+      if (tile.type === TileType.LibraryShelf) {
+        player.pos = { x: nx, y: ny };
+        const scroll = createScroll(rng.nextInt(0, 8));
+        if (player.inventory.length < getMaxInventorySize(player)) {
+          player.inventory = [...player.inventory, scroll];
+          addMessages([msg(`从书架上取下了一卷${scroll.identified ? scroll.name : scroll.unidentifiedName ?? '卷轴'}！`, MessageCategory.Item, '#ccaa66')]);
+        } else {
+          addMessages([msg('书架上有一卷卷轴，但你的背包已满！', MessageCategory.Item, '#ccaa66')]);
+        }
+        if (rng.chance(0.1)) {
+          player.statPoints = (player.statPoints ?? 0) + 1;
+          addMessages([msg('古老的知识涌入脑海！获得1个额外属性点！', MessageCategory.Item, '#ffcc44')]);
+        }
+        AudioManager.playSFX('pickup');
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.HiddenFloor, char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true, transparent: true };
+        set({ player, map: newMap });
+        processTurn();
+        return;
+      }
+
+      // VoidRiftRoom: Exclusive relic (60%) or teleport away (40%)
+      if (tile.type === TileType.VoidRiftRoom) {
+        player.pos = { x: nx, y: ny };
+        if (rng.next() < 0.6) {
+          const exclusiveRelics: RelicId[] = [RelicId.DarkVision, RelicId.EchoHeart, RelicId.AbyssWhisper];
+          const availableRelics = exclusiveRelics.filter(r => !player.relics.includes(r));
+          if (availableRelics.length > 0) {
+            const weightedRelics: RelicId[] = [];
+            for (const r of availableRelics) {
+              weightedRelics.push(r);
+              if (RELIC_DEFS[r].rarity === RelicRarity.Rare) weightedRelics.push(r);
+            }
+            const relicId = rng.pick(weightedRelics);
+            player.relics = [...player.relics, relicId];
+            addMessages([msg(`虚空裂隙中，你获得了${RELIC_DEFS[relicId].name}！`, MessageCategory.Item, '#cc44ff')]);
+            AudioManager.playSFX('voidRift');
+            AudioManager.playSFX('relicAcquire');
+          } else {
+            player.hp = player.maxHp;
+            player.mp = player.maxMp;
+            addMessages([msg('虚空裂隙的能量涌入全身！HP/MP全回复！', MessageCategory.Item, '#cc44ff')]);
+            AudioManager.playSFX('magicSpring');
+          }
+        } else {
+          const walkablePositions: Position[] = [];
+          for (let y = 0; y < state.map.length; y++) {
+            for (let x = 0; x < state.map[0].length; x++) {
+              if (state.map[y][x].walkable && !(x === player.pos.x && y === player.pos.y)) {
+                walkablePositions.push({ x, y });
+              }
+            }
+          }
+          if (walkablePositions.length > 0) {
+            player.pos = rng.pick(walkablePositions);
+            addMessages([msg('虚空裂隙将你传送到了别处！', MessageCategory.Environment, '#cc44ff')]);
+          } else {
+            addMessages([msg('虚空裂隙震动了一下，但什么也没发生...', MessageCategory.Environment, '#cc44ff')]);
+          }
+          AudioManager.playSFX('voidRift');
+        }
+        const newMap = state.map.map(row => row.map(t => ({ ...t })));
+        newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.HiddenFloor, char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true, transparent: true };
+        set({ player, map: newMap });
+        updateFOV();
+        return;
+      }
+
+      // FungiPatch: walkable but poisons
+      if (tile.type === TileType.FungiPatch) {
+        player.pos = { x: nx, y: ny };
+        if (!player.statusEffects.some(e => e.type === StatusEffectType.Poison)) {
+          player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Poison, duration: 4, damage: 3 }];
+          addMessages([msg('踩到了毒菌丛！你中毒了！', MessageCategory.Environment, '#44cc44')]);
+          AudioManager.playSFX('trap');
+        }
         set({ player });
         processTurn();
         return;
@@ -2352,6 +2720,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.DoorOpen, char: '/', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true };
           set({ map: newMap });
           addMessages([msg('你推开了铁门。前方传来强大的气息…', MessageCategory.System, '#ffd700')]);
+          AudioManager.playSFX('ironDoor');
           return;
         }
         // VoidPillar (虚空柱): Attack to destroy, reduces boss ATK by 3
@@ -2377,6 +2746,18 @@ export const useGameStore = create<GameStore>((set, get) => {
         // LavaPool: Can't walk into it (like Lava)
         // Already handled by walkable:false — no special interaction needed
 
+        // Throne (♔): Boss throne — show flavor text
+        if (tile.type === TileType.Throne) {
+          const boss = state.enemies.find(e => e.isBoss && e.hp > 0);
+          if (boss) {
+            addMessages([msg('王座散发着不祥的气息，Boss 还在！', MessageCategory.System, '#ffd700')]);
+          } else {
+            addMessages([msg('空荡的王座沉默地矗立着…', MessageCategory.System, '#888866')]);
+          }
+          AudioManager.playSFX('bump');
+          return;
+        }
+
         if (tile.type === TileType.Sarcophagus) {
           // 50% good, 50% bad
           if (rng.chance(0.5)) {
@@ -2400,6 +2781,48 @@ export const useGameStore = create<GameStore>((set, get) => {
           processTurn();
           return;
         }
+        // HiddenSarcophagus: High-quality loot + elite guard spawn
+        if (tile.type === TileType.HiddenSarcophagus) {
+          const newMap = state.map.map(row => row.map(t => ({ ...t })));
+          newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.HiddenFloor, char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true, transparent: true };
+          addMessages([msg('你打开了古墓石棺！', MessageCategory.Environment, '#aa8866')]);
+          AudioManager.playSFX('door');
+          const luckBonus = state.currentFloor < 10 ? 5 : state.currentFloor < 20 ? 8 : 12;
+          const loot = createRandomItem(state.currentFloor, rng, false, luckBonus, 0);
+          let updatedItems = [...state.items, { item: loot, pos: { x: nx, y: ny } }];
+          const guardDirs = [[1,0],[-1,0],[0,1],[0,-1]];
+          let guardsSpawned = 0;
+          const maxGuards = state.currentFloor < 10 ? 1 : 2;
+          let updatedEnemies = [...state.enemies];
+          const enemyIdsList = BIOME_CONFIG[getBiomeForFloor(state.currentFloor)].enemyIds ?? ['skeleton'];
+          for (const [gdx, gdy] of guardDirs) {
+            if (guardsSpawned >= maxGuards) break;
+            const gx = nx + gdx;
+            const gy = ny + gdy;
+            if (gy >= 0 && gy < state.map.length && gx >= 0 && gx < state.map[0].length && state.map[gy][gx].walkable) {
+              const defId = rng.pick(enemyIdsList);
+              const affixValues = Object.values(EliteAffix);
+              const affix = rng.pick(affixValues) as EliteAffix;
+              const guard = createEliteEnemy(defId, { x: gx, y: gy }, state.currentFloor, affix);
+              if (guard) {
+                guard.name = '古墓守卫';
+                if (state.currentFloor >= 21) {
+                  guard.hp = Math.floor(guard.hp * 1.5);
+                  guard.maxHp = guard.hp;
+                }
+                updatedEnemies.push(guard);
+                guardsSpawned++;
+              }
+            }
+          }
+          if (guardsSpawned > 0) {
+            AudioManager.playSFX('bossAppear');
+          }
+          set({ map: newMap, items: updatedItems, enemies: updatedEnemies });
+          return;
+        }
+        // Wall bump — no special interaction, just blocked
+        AudioManager.playSFX('bump');
         return;
       }
 
@@ -2569,6 +2992,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#aaaaaa', bg: 'transparent', walkable: true, transparent: true };
         set({ map: newMap, player });
         addMessages([msg('碑文的力量融入了你的身体！全属性+1！', MessageCategory.System, '#ffcc44')]);
+        AudioManager.playSFX('relicAcquire');
       }
 
       // HealCrystal: Heal 30% HP (one-time use)
@@ -3033,7 +3457,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         }
         case ItemType.Food: {
           const food = item as FoodItem;
-          player.hunger = Math.min(player.maxHunger, player.hunger + food.nutrition);
+          player.hunger = player.hunger + food.nutrition;
           messages.push(msg(`你吃了${food.name}，恢复了 ${food.nutrition} 饱食度`, MessageCategory.Item, '#ccaa66'));
           player.inventory = player.inventory.filter((_, i) => i !== index);
           break;
@@ -3557,7 +3981,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           break;
         case 'wish_touch':
           if (rng.chance(0.5)) {
-            player.hunger = Math.min(player.maxHunger, player.hunger + 50);
+            player.hunger = player.hunger + 50;
             messages.push(msg('水面温暖！饱食度+50！', MessageCategory.Item, '#44cc44'));
           } else {
             player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Poison, duration: 3, damage: 2 }];
@@ -4059,7 +4483,31 @@ export const useGameStore = create<GameStore>((set, get) => {
             player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 8, damage: 5 }];
             messages.push(msg('仔细研究壁画，获得8回合防御+5！（永久增益已达上限）', MessageCategory.Item, '#ffcc44'));
           }
-          // Spawn 2 buffed enemies nearby - simplified: just add a message
+          // Spawn 2 elite mural guards near player
+          const biome = getBiomeForFloor(state.currentFloor);
+          const enemyIds = BIOME_CONFIG[biome]?.enemyIds ?? ['skeleton'];
+          const affixes = [EliteAffix.Armored, EliteAffix.Frenzy, EliteAffix.Regen, EliteAffix.Vampiric, EliteAffix.Explosive, EliteAffix.Phantom];
+          const spawnDirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1]];
+          let spawned = 0;
+          for (const [dx, dy] of spawnDirs) {
+            if (spawned >= 2) break;
+            const sx = player.pos.x + dx;
+            const sy = player.pos.y + dy;
+            if (sy >= 0 && sy < state.map.length && sx >= 0 && sx < state.map[0].length && state.map[sy][sx].walkable) {
+              const defId = rng.pick(enemyIds);
+              const affix = rng.pick(affixes);
+              const guard = createEliteEnemy(defId, { x: sx, y: sy }, state.currentFloor, affix);
+              if (guard) {
+                guard.name = `壁画守卫`;
+                state.enemies = [...state.enemies, guard];
+                spawned++;
+              }
+            }
+          }
+          if (spawned > 0) {
+            set({ enemies: state.enemies });
+            AudioManager.playSFX('bossAppear');
+          }
           break;
         }
         case 'ancientMural_copy': {

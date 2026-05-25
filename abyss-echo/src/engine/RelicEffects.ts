@@ -14,7 +14,7 @@ export function hasRelic(player: Player, relicId: RelicId): boolean {
 // Get ATK% modifier from relics (returns additive modifier, e.g. -0.15 for hungerRing)
 export function getRelicAtkModifier(player: Player): number {
   let mod = 0;
-  if (hasRelic(player, RelicId.HungerRing)) mod -= 0.15;
+  if (hasRelic(player, RelicId.HungerRing)) mod -= 0.08;
   if (hasRelic(player, RelicId.CurseVessel)) mod += getCurseVesselBonus(player);
   if (hasRelic(player, RelicId.ElementResonance) && getElementResonanceActive(player)) mod += 0.25;
   // UndyingWill blessing checked separately, not a relic

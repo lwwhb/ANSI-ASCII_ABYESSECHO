@@ -86,6 +86,11 @@ src/
 │   └── index.ts        # 所有TypeScript接口与枚举
 └── utils/              # 工具函数
     └── random.ts       # SeededRandom（Mulberry32 PRNG）
+simulation/            # 自动化模拟测试
+├── mock-browser.ts    # 浏览器API模拟（Node.js运行用）
+├── ai-player.ts      # AI决策引擎
+├── statistics.ts      # 统计与报告生成
+└── run.ts             # 主运行器
 ```
 
 ---
@@ -140,6 +145,8 @@ src/
 | `enhanceFail` | 沉闷碎裂声（强化失败） |
 | `bossPhase` | 低频隆隆 + 短促敲击（Boss阶段转换） |
 | `portalWarp` | 电子颤音（虚空传送门传送） |
+| `bump` | 低沉闷击（撞墙/不可通过地形） |
+| `ironDoor` | 金属摩擦声（推开精英铁门） |
 
 ---
 
@@ -169,6 +176,37 @@ src/
 - **Canvas API** 地图渲染
 - **SeededRandom** (Mulberry32) 确定性随机数
 - **localStorage** 暂停存档（Suspend Save，加载即删档）
+
+---
+
+## 🧪 模拟测试
+
+项目包含自动化游戏模拟引擎，用于数值平衡测试。AI玩家直接运行游戏Store（无UI），模拟真实游玩行为：
+
+```bash
+cd abyss-echo
+
+# 快速测试
+npx tsx simulation/run.ts --runs=1 --floors=10
+
+# 标准平衡测试
+npx tsx simulation/run.ts --runs=3 --floors=15
+
+# 单职业详细输出
+npx tsx simulation/run.ts --runs=1 --floors=5 --class=warrior --verbose
+
+# 高样本统计
+npx tsx simulation/run.ts --runs=10 --floors=30
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--runs=N` | 5 | 每职业运行次数 |
+| `--floors=N` | 30 | 最大楼层数 |
+| `--class=xxx` | warrior,mage,rogue | 测试职业 |
+| `--verbose` | 关 | 每层详细输出 |
+
+输出：终端报告 + `simulation/simulation-report.txt`（HP/金币/装备强度曲线、死因统计、平衡分析）
 
 ---
 

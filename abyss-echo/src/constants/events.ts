@@ -280,7 +280,7 @@ export const EXTENDED_EVENT_DEFS: ExtendedGameEventDef[] = [
     options: [
       {
         id: 'ancientMural_study',
-        textZh: '仔细研究：获得Inscription效果(全属性+1) + 进入战斗(2个强化敌人)',
+        textZh: '仔细研究：全属性+1 + 壁画守卫出现(2个强化敌人)',
         effectId: 'ancientMural_study',
         isRare: false,
       },
@@ -292,7 +292,7 @@ export const EXTENDED_EVENT_DEFS: ExtendedGameEventDef[] = [
       },
       {
         id: 'ancientMural_copy',
-        textZh: '🔮 临摹(需inscriptionCount≥1)：获得永久+1随机属性',
+        textZh: '🔮 临摹(需碑文计数≥1)：永久+1随机属性',
         effectId: 'ancientMural_copy',
         condition: { type: 'inscriptionCount', min: 1 },
         isRare: true,

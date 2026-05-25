@@ -1,0 +1,417 @@
+[
+  {
+    "className": "warrior",
+    "runs": 5,
+    "avgDeathFloor": 25,
+    "maxFloor": 30,
+    "survivalRate": 80,
+    "avgKillsPerRun": 6.2,
+    "avgGoldPerRun": 42.8,
+    "avgTotalDamageTaken": 29.4,
+    "avgTotalDamageDealt": 87.8,
+    "bossKillsPerRun": 0,
+    "avgHpByFloor": {
+      "1": 60.2,
+      "2": 67,
+      "3": 84,
+      "4": 65,
+      "5": -1
+    },
+    "avgMpByFloor": {
+      "1": 4.4,
+      "2": 2,
+      "3": 25,
+      "4": 1,
+      "5": 1
+    },
+    "avgGoldByFloor": {
+      "1": 20.2,
+      "2": 51.5,
+      "3": 89,
+      "4": 106,
+      "5": 128
+    },
+    "avgEquipPowerByFloor": {
+      "1": 4.6,
+      "2": 14.5,
+      "3": 31,
+      "4": 31,
+      "5": 33
+    },
+    "survivalByFloor": {
+      "1": 100,
+      "2": 100,
+      "3": 100,
+      "4": 100,
+      "5": 80,
+      "6": 80,
+      "7": 80,
+      "8": 80,
+      "9": 80,
+      "10": 80,
+      "11": 80,
+      "12": 80,
+      "13": 80,
+      "14": 80,
+      "15": 80,
+      "16": 80,
+      "17": 80,
+      "18": 80,
+      "19": 80,
+      "20": 80,
+      "21": 80,
+      "22": 80,
+      "23": 80,
+      "24": 80,
+      "25": 80,
+      "26": 80,
+      "27": 80,
+      "28": 80,
+      "29": 80,
+      "30": 80
+    },
+    "deathCauseCount": {
+      "饥饿致死": 1
+    },
+    "deathFloorDistribution": {
+      "5": 1
+    },
+    "skillsUsed": {
+      "warCry": 19,
+      "shieldBash": 40
+    },
+    "potionsUsed": {
+      "food": 32,
+      "identifiedPotion": 2
+    },
+    "scrollsUsed": {},
+    "errors": [
+      "F2: 超过500回合，强制结束",
+      "F1: 超过500回合，强制结束",
+      "F1: 超过500回合，强制结束",
+      "F1: 超过500回合，强制结束"
+    ],
+    "bugs": [
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F2 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 2,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F1 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 1,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F1 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 1,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F1 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 1,
+        "lastAction": "move"
+      }
+    ]
+  },
+  {
+    "className": "mage",
+    "runs": 5,
+    "avgDeathFloor": 19.8,
+    "maxFloor": 30,
+    "survivalRate": 60,
+    "avgKillsPerRun": 10,
+    "avgGoldPerRun": 63.6,
+    "avgTotalDamageTaken": 11.4,
+    "avgTotalDamageDealt": 146,
+    "bossKillsPerRun": 0.2,
+    "avgHpByFloor": {
+      "1": 44.4,
+      "2": 45.333333333333336,
+      "3": 31,
+      "4": 45,
+      "5": 75,
+      "6": -23
+    },
+    "avgMpByFloor": {
+      "1": 48.2,
+      "2": 52.333333333333336,
+      "3": 67.5,
+      "4": 35,
+      "5": 66,
+      "6": 96
+    },
+    "avgGoldByFloor": {
+      "1": 21.8,
+      "2": 45.666666666666664,
+      "3": 78,
+      "4": 124,
+      "5": 222,
+      "6": 222
+    },
+    "avgEquipPowerByFloor": {
+      "1": 3.4,
+      "2": 0,
+      "3": 0,
+      "4": 15,
+      "5": 27,
+      "6": 27
+    },
+    "survivalByFloor": {
+      "1": 100,
+      "2": 100,
+      "3": 80,
+      "4": 80,
+      "5": 80,
+      "6": 60,
+      "7": 60,
+      "8": 60,
+      "9": 60,
+      "10": 60,
+      "11": 60,
+      "12": 60,
+      "13": 60,
+      "14": 60,
+      "15": 60,
+      "16": 60,
+      "17": 60,
+      "18": 60,
+      "19": 60,
+      "20": 60,
+      "21": 60,
+      "22": 60,
+      "23": 60,
+      "24": 60,
+      "25": 60,
+      "26": 60,
+      "27": 60,
+      "28": 60,
+      "29": 60,
+      "30": 60
+    },
+    "deathCauseCount": {
+      "被骷髅击杀": 1,
+      "被精英怨灵击杀": 1
+    },
+    "deathFloorDistribution": {
+      "3": 1,
+      "6": 1
+    },
+    "skillsUsed": {
+      "iceShield": 65,
+      "fireball": 52,
+      "chainLightning": 3
+    },
+    "potionsUsed": {
+      "food": 29
+    },
+    "scrollsUsed": {},
+    "errors": [
+      "F2: 超过500回合，强制结束",
+      "F1: 超过500回合，强制结束",
+      "F1: 超过500回合，强制结束"
+    ],
+    "bugs": [
+      {
+        "severity": "warning",
+        "category": "AI空转",
+        "detail": "连续21次执行相同操作: move:1,0:",
+        "turn": 88,
+        "floor": 1,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI空转",
+        "detail": "连续21次执行相同操作: move:0,-1:",
+        "turn": 21,
+        "floor": 2,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F2 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 2,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F1 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 1,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F1 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 1,
+        "lastAction": "move"
+      }
+    ]
+  },
+  {
+    "className": "rogue",
+    "runs": 5,
+    "avgDeathFloor": 30,
+    "maxFloor": 30,
+    "survivalRate": 100,
+    "avgKillsPerRun": 15,
+    "avgGoldPerRun": 115.6,
+    "avgTotalDamageTaken": 42.4,
+    "avgTotalDamageDealt": 221.6,
+    "bossKillsPerRun": 0.2,
+    "avgHpByFloor": {
+      "1": 48.6,
+      "2": 49,
+      "3": 50.666666666666664,
+      "4": 62,
+      "5": 69,
+      "6": 44,
+      "7": 96
+    },
+    "avgMpByFloor": {
+      "1": 21.6,
+      "2": 27.333333333333332,
+      "3": 30.666666666666668,
+      "4": 6,
+      "5": 30.5,
+      "6": 29,
+      "7": 65
+    },
+    "avgGoldByFloor": {
+      "1": 24.6,
+      "2": 47.333333333333336,
+      "3": 76,
+      "4": 134.5,
+      "5": 218.5,
+      "6": 247,
+      "7": 272
+    },
+    "avgEquipPowerByFloor": {
+      "1": 2.8,
+      "2": 2.6666666666666665,
+      "3": 9.666666666666666,
+      "4": 10,
+      "5": 31,
+      "6": 30,
+      "7": 30
+    },
+    "survivalByFloor": {
+      "1": 100,
+      "2": 100,
+      "3": 100,
+      "4": 100,
+      "5": 100,
+      "6": 100,
+      "7": 100,
+      "8": 100,
+      "9": 100,
+      "10": 100,
+      "11": 100,
+      "12": 100,
+      "13": 100,
+      "14": 100,
+      "15": 100,
+      "16": 100,
+      "17": 100,
+      "18": 100,
+      "19": 100,
+      "20": 100,
+      "21": 100,
+      "22": 100,
+      "23": 100,
+      "24": 100,
+      "25": 100,
+      "26": 100,
+      "27": 100,
+      "28": 100,
+      "29": 100,
+      "30": 100
+    },
+    "deathCauseCount": {},
+    "deathFloorDistribution": {},
+    "skillsUsed": {
+      "poisonBlade": 161,
+      "shadowStep": 430,
+      "fanOfKnives": 4
+    },
+    "potionsUsed": {
+      "food": 38
+    },
+    "scrollsUsed": {},
+    "errors": [
+      "F7: 超过500回合，强制结束",
+      "F3: 超过500回合，强制结束",
+      "F1: 超过500回合，强制结束",
+      "F1: 超过500回合，强制结束",
+      "F5: 超过500回合，强制结束"
+    ],
+    "bugs": [
+      {
+        "severity": "warning",
+        "category": "AI空转",
+        "detail": "连续21次执行相同操作: move:1,0:",
+        "turn": 85,
+        "floor": 6,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F7 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 7,
+        "lastAction": "useSkill"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F3 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 3,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F1 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 1,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F1 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 1,
+        "lastAction": "move"
+      },
+      {
+        "severity": "warning",
+        "category": "AI卡死",
+        "detail": "F5 超过500回合未下楼 (phase=playing)",
+        "turn": 501,
+        "floor": 5,
+        "lastAction": "move"
+      }
+    ]
+  }
+]

@@ -14,6 +14,7 @@ const sections: Section[] = [
   { id: 'items', title: '🎒 物品系统' },
   { id: 'enemies', title: '👾 敌人图鉴' },
   { id: 'terrain', title: '🌍 地形与生态' },
+  { id: 'hiddenrooms', title: '🔮 隐藏房间' },
   { id: 'hunger', title: '🍖 饥饿系统' },
   { id: 'strategy', title: '💡 策略指南' },
 ];
@@ -484,8 +485,18 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <tr><td style={{ ...tdStyle, color: '#4488ff' }}>≈ 🔵</td><td style={tdStyle}>水</td><td style={tdStyle}>不可通过</td></tr>
                 <tr><td style={{ ...tdStyle, color: '#ff4444' }}>≈ 🔴</td><td style={tdStyle}>岩浆</td><td style={tdStyle}>不可通过</td></tr>
                 <tr><td style={{ ...tdStyle, color: '#44cc44' }}>░ 🟢</td><td style={tdStyle}>毒气</td><td style={tdStyle}>可通过，30%几率中毒</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#ffd700' }}>▦</td><td style={tdStyle}>铁门</td><td style={tdStyle}>不可通过，走上去推开（精英怪物房间）</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#ffd700' }}>♔</td><td style={tdStyle}>王座</td><td style={tdStyle}>不可通过，Boss房装饰</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#44cc44' }}>§</td><td style={tdStyle}>金币堆</td><td style={tdStyle}>拾取金币</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#44aaff' }}>◇</td><td style={tdStyle}>魔法泉</td><td style={tdStyle}>全回复HP/MP+防御buff</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#aa44ff' }}>⊕</td><td style={tdStyle}>隐藏祭坛</td><td style={tdStyle}>永久+1属性或Common遗物</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#44aacc' }}>▮</td><td style={tdStyle}>书架</td><td style={tdStyle}>2卷轴+10%概率额外属性点</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#aa44aa' }}>◎</td><td style={tdStyle}>虚空裂隙房间</td><td style={tdStyle}>专属遗物(60%)或传送走(40%)</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#88ff88' }}>◈</td><td style={tdStyle}>真菌丛</td><td style={tdStyle}>1-2蘑菇食物+地面毒雾</td></tr>
+                <tr><td style={{ ...tdStyle, color: '#cc8844' }}>⚰</td><td style={tdStyle}>古墓石棺</td><td style={tdStyle}>高品质物品+精英守卫</td></tr>
               </tbody>
             </table>
+            <p style={pStyle}>• <strong style={{ color: '#aa88aa' }}>隐秘墙</strong>：外观与普通墙壁无异，背后连接隐藏房间（3×3至5×5）。隐藏房间地板呈紫色，进入时切换神秘BGM。靠近时提示"墙壁似乎有裂缝…"</p>
 
             <h3 style={h3Style}>陷阱</h3>
             <p style={pStyle}>陷阱在地面上<strong style={{ color: '#ff6644' }}>不可见</strong>，踩上去才会触发！</p>
@@ -498,6 +509,43 @@ const ManualOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <tr><td style={tdStyle}>传送</td><td style={tdStyle}>随机传送到地图某处</td></tr>
               </tbody>
             </table>
+          </div>
+
+          {/* 隐藏房间 */}
+          <div id="section-hiddenrooms">
+            <h2 style={h2Style}>🔮 隐藏房间</h2>
+            <p style={pStyle}>每层地牢会随机生成1-2道<strong style={{ color: '#aa88aa' }}>隐秘墙</strong>，外观与普通墙壁无异，但背后连接隐藏房间（3×3至5×5大小）。隐藏房间地板呈紫色，进入时切换为神秘BGM。靠近时消息提示"墙壁似乎有裂缝…"，穿过时显示"你穿过了一道暗墙！"。</p>
+
+            <h3 style={h3Style}>隐藏房间类型</h3>
+            <table style={tableStyle}>
+              <thead><tr><th style={thStyle}>类型</th><th style={thStyle}>图标</th><th style={thStyle}>内容</th><th style={thStyle}>风险</th></tr></thead>
+              <tbody>
+                <tr><td style={tdStyle}>屠宰场</td><td style={{ ...tdStyle, fontSize: '16px' }}>🥩</td><td style={tdStyle}>2-4个食物，深层有仙馔</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+                <tr><td style={tdStyle}>藏宝室</td><td style={{ ...tdStyle, fontSize: '16px' }}>💰</td><td style={tdStyle}>金币堆+1件稀有装备</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+                <tr><td style={tdStyle}>武器库</td><td style={{ ...tdStyle, fontSize: '16px' }}>⚔️</td><td style={tdStyle}>1-2件Rare+装备</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+                <tr><td style={tdStyle}>炼金室</td><td style={{ ...tdStyle, fontSize: '16px' }}>🧪</td><td style={tdStyle}>2-3瓶药水+1卷轴</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+                <tr><td style={tdStyle}>怪物巢穴</td><td style={{ ...tdStyle, fontSize: '16px' }}>🐉</td><td style={tdStyle}>2-3个精英守卫→击杀掉Rare+装备</td><td style={{ ...tdStyle, color: '#ff4444' }}>高</td></tr>
+                <tr><td style={tdStyle}>古墓室</td><td style={{ ...tdStyle, fontSize: '16px' }}>⚰️</td><td style={tdStyle}>高品质物品+精英守卫</td><td style={{ ...tdStyle, color: '#ff8844' }}>中高</td></tr>
+                <tr><td style={tdStyle}>魔法泉</td><td style={{ ...tdStyle, fontSize: '16px' }}>✨</td><td style={tdStyle}>全回复HP/MP+防御buff</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+                <tr><td style={tdStyle}>祭坛室</td><td style={{ ...tdStyle, fontSize: '16px' }}>🙏</td><td style={tdStyle}>永久+1属性或Common遗物</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+                <tr><td style={tdStyle}>图书馆</td><td style={{ ...tdStyle, fontSize: '16px' }}>📚</td><td style={tdStyle}>2卷轴+10%概率额外属性点</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+                <tr><td style={tdStyle}>虚空裂隙</td><td style={{ ...tdStyle, fontSize: '16px' }}>🌀</td><td style={tdStyle}>专属遗物(60%)或传送走(40%)</td><td style={{ ...tdStyle, color: '#ff4444' }}>高</td></tr>
+                <tr><td style={tdStyle}>真菌丛</td><td style={{ ...tdStyle, fontSize: '16px' }}>🍄</td><td style={tdStyle}>1-2蘑菇食物+地面毒雾</td><td style={{ ...tdStyle, color: '#aa8800' }}>低</td></tr>
+                <tr><td style={tdStyle}>空洞</td><td style={{ ...tdStyle, fontSize: '16px' }}>💨</td><td style={tdStyle}>什么都没有</td><td style={{ ...tdStyle, color: '#44cc44' }}>无</td></tr>
+              </tbody>
+            </table>
+
+            <h3 style={h3Style}>专属遗物</h3>
+            <p style={pStyle}>从虚空裂隙有60%概率获得以下专属遗物：</p>
+            <table style={tableStyle}>
+              <thead><tr><th style={thStyle}>遗物</th><th style={thStyle}>图标</th><th style={thStyle}>效果</th></tr></thead>
+              <tbody>
+                <tr><td style={tdStyle}>暗视之眼</td><td style={{ ...tdStyle, fontSize: '16px' }}>👁‍🗨</td><td style={tdStyle}>视野+2</td></tr>
+                <tr><td style={tdStyle}>回响之心</td><td style={{ ...tdStyle, fontSize: '16px' }}>💜</td><td style={tdStyle}>进入隐藏房间时全回复HP/MP</td></tr>
+                <tr><td style={tdStyle}>深渊低语</td><td style={{ ...tdStyle, fontSize: '16px' }}>🗣️</td><td style={tdStyle}>每层首次进入新房间揭示1个隐秘墙</td></tr>
+              </tbody>
+            </table>
+            <p style={pStyle}>• <strong style={{ color: '#aaaaaa' }}>第六感遗物</strong>可以自动揭示附近的隐秘墙，与深渊低语组合效果更佳。</p>
           </div>
 
           {/* 饥饿系统 */}

@@ -11,7 +11,7 @@ import {
   placeDoors, addEnvironment,
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
-  placeThemedRooms,
+  placeThemedRooms, verifyConnectivity, findNearestWalkable,
 } from './DungeonGenerator';
 
 function addLoopCorridors(map: Tile[][], rooms: Room[], biome: Biome, rng: SeededRandom): void {
@@ -107,7 +107,7 @@ export function generateStoneDungeon(floor: number, seed: number): DungeonData {
   }
 
   // Elite + special rooms + secret walls
-  const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
+  const { eliteEnemy, eliteRoom, specialRooms, secretWalls, hiddenRooms } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
 
   // Themed rooms (excluding start, boss, shop, event, elite rooms)
   const reservedRooms: Room[] = [startRoom];
@@ -128,6 +128,13 @@ export function generateStoneDungeon(floor: number, seed: number): DungeonData {
 
   const { themedRooms, steamVentTurns } = placeThemedRooms(map, rooms, biome, rng, reservedRooms);
 
+  // Verify connectivity — if stairs unreachable, regenerate corridors as fallback
+  if (!verifyConnectivity(map, playerStart, stairsDown)) {
+    const walkStart = findNearestWalkable(map, playerStart);
+    const walkStairs = findNearestWalkable(map, stairsDown);
+    carveCorridor(map, walkStart.x, walkStart.y, walkStairs.x, walkStairs.y, biome);
+  }
+
   return {
     map,
     rooms,
@@ -144,5 +151,6 @@ export function generateStoneDungeon(floor: number, seed: number): DungeonData {
     bossArenaData: boss?.arenaData,
     themedRooms,
     steamVentTurns,
+    hiddenRooms,
   };
 }

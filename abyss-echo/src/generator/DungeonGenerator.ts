@@ -1,4 +1,4 @@
-import { Tile, TileType, Position, Biome, EliteAffix, BossArenaData, RoomTheme } from '../types';
+import { Tile, TileType, Position, Biome, EliteAffix, BossArenaData, RoomTheme, HiddenRoomType, HiddenRoomData } from '../types';
 import { SeededRandom } from '../utils/random';
 import {
   MIN_ROOM_SIZE, MAX_ROOM_SIZE, ROOM_PADDING,
@@ -6,6 +6,7 @@ import {
   BIOME_TILES, BIOME_CONFIG, getBiomeForFloor,
   ENEMIES_PER_FLOOR_BASE, ENEMIES_PER_FLOOR_GROWTH,
   BOSS_DEFS, BOSS_ARENA_OBJECTS, SPECIAL_ROOM_CHANCES,
+  HIDDEN_ROOM_WEIGHTS,
 } from '../constants';
 import { THEMED_ROOM_CONFIGS, THEMES_BY_BIOME } from '../constants/themedRooms';
 import { generateStoneDungeon } from './StoneDungeonGenerator';
@@ -50,6 +51,7 @@ export interface DungeonData {
   bossArenaData?: BossArenaData;
   themedRooms: { room: Room; theme: RoomTheme }[];
   steamVentTurns: { x: number; y: number; spawnTurn: number }[];
+  hiddenRooms: HiddenRoomData[];
 }
 
 // Export shared utility functions for use by biome-specific generators
@@ -169,10 +171,17 @@ export function carveCorridor(map: Tile[][], x1: number, y1: number, x2: number,
   let y = y1;
   const height = map.length;
   const width = map[0]?.length || 0;
+  // Tiles that corridors can carve through (Wall + VoidWall + Lava + CooledLava + non-walkable obstacles + Water)
+  const carveable = new Set([
+    TileType.Wall, TileType.VoidWall, TileType.Lava, TileType.CooledLava,
+    TileType.Sarcophagus, TileType.HiddenSarcophagus, TileType.Throne,
+    TileType.Barricade, TileType.WeaponRack, TileType.Forge,
+    TileType.Water, TileType.ShallowWater, TileType.PoisonGas,
+  ]);
 
   while (x !== x2) {
     if (x >= 0 && x < width && y >= 0 && y < height) {
-      if (map[y][x].type === TileType.Wall) {
+      if (carveable.has(map[y][x].type)) {
         map[y][x] = createTile(TileType.Corridor, biome);
       }
     }
@@ -180,7 +189,7 @@ export function carveCorridor(map: Tile[][], x1: number, y1: number, x2: number,
   }
   while (y !== y2) {
     if (x >= 0 && x < width && y >= 0 && y < height) {
-      if (map[y][x].type === TileType.Wall) {
+      if (carveable.has(map[y][x].type)) {
         map[y][x] = createTile(TileType.Corridor, biome);
       }
     }
@@ -251,26 +260,126 @@ function makeTile(type: TileType, char: string, fg: string, bg: string, walkable
 }
 
 const NEW_TILE_DEFAULTS: Record<string, { char: string; fg: string; bg: string; walkable: boolean; transparent: boolean }> = {
-  throne:         { char: '♔', fg: '#ffd700', bg: '#1a0808', walkable: false, transparent: false },
-  barricade:      { char: '▦', fg: '#8b4513', bg: '#1a0808', walkable: false, transparent: true },
-  webFloor:       { char: '≈', fg: '#aaaaaa', bg: '#0a0a1a', walkable: true,  transparent: true },
-  spiderEgg:      { char: '◉', fg: '#cccccc', bg: '#0a0a1a', walkable: true,  transparent: true },
-  altar:          { char: '⛩', fg: '#aaaaff', bg: '#140a14', walkable: true,  transparent: true },
-  lavaPool:       { char: '≈', fg: '#ff4400', bg: '#1a0a04', walkable: false, transparent: true },
-  voidRift:       { char: '◎', fg: '#ff44ff', bg: '#100818', walkable: true,  transparent: true },
-  voidPillar:     { char: '█', fg: '#8800aa', bg: '#100818', walkable: false, transparent: false },
-  corruptionPool: { char: '◎', fg: '#aa00aa', bg: '#100818', walkable: true,  transparent: true },
-  healCrystal:    { char: '◆', fg: '#00ffaa', bg: '#100818', walkable: true,  transparent: true },
-  eliteDoor:      { char: '▦', fg: '#ffd700', bg: 'transparent', walkable: false, transparent: true },
-  fountain:       { char: '⌠', fg: '#44aaff', bg: 'transparent', walkable: true, transparent: true },
-  inscription:    { char: '▐', fg: '#ddddaa', bg: 'transparent', walkable: true, transparent: true },
-  secretWall:     { char: '#', fg: '#444444', bg: '#222222', walkable: true, transparent: true },
-  monument:       { char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true },
-  spikeTrap:      { char: '▲', fg: '#8888ff', bg: '#222244', walkable: true, transparent: true },
-  weaponRack:     { char: '⋔', fg: '#aaaaaa', bg: '#443322', walkable: false, transparent: false },
-  forge:          { char: '⚒', fg: '#ff8800', bg: '#442200', walkable: false, transparent: false },
-  steamVent:      { char: '≋', fg: '#cccccc', bg: '#445566', walkable: true, transparent: true },
+  throne:            { char: '♔', fg: '#ffd700', bg: '#1a0808', walkable: false, transparent: false },
+  barricade:         { char: '▦', fg: '#8b4513', bg: '#1a0808', walkable: false, transparent: true },
+  webFloor:          { char: '≈', fg: '#aaaaaa', bg: '#0a0a1a', walkable: true,  transparent: true },
+  spiderEgg:         { char: '◉', fg: '#cccccc', bg: '#0a0a1a', walkable: true,  transparent: true },
+  altar:             { char: '⛩', fg: '#aaaaff', bg: '#140a14', walkable: true,  transparent: true },
+  lavaPool:          { char: '≈', fg: '#ff4400', bg: '#1a0a04', walkable: false, transparent: true },
+  voidRift:          { char: '◎', fg: '#ff44ff', bg: '#100818', walkable: true,  transparent: true },
+  voidPillar:        { char: '█', fg: '#8800aa', bg: '#100818', walkable: false, transparent: false },
+  corruptionPool:    { char: '◎', fg: '#aa00aa', bg: '#100818', walkable: true,  transparent: true },
+  healCrystal:       { char: '◆', fg: '#00ffaa', bg: '#100818', walkable: true,  transparent: true },
+  eliteDoor:         { char: '▦', fg: '#ffd700', bg: 'transparent', walkable: false, transparent: true },
+  fountain:          { char: '⌠', fg: '#44aaff', bg: 'transparent', walkable: true, transparent: true },
+  inscription:       { char: '▐', fg: '#ddddaa', bg: 'transparent', walkable: true, transparent: true },
+  secretWall:        { char: '█', fg: '#555566', bg: '#555566', walkable: true, transparent: false },
+  hiddenFloor:      { char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true, transparent: false },
+  monument:          { char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true },
+  spikeTrap:         { char: '▲', fg: '#8888ff', bg: '#222244', walkable: true, transparent: true },
+  weaponRack:        { char: '⋔', fg: '#aaaaaa', bg: '#443322', walkable: false, transparent: false },
+  forge:             { char: '⚒', fg: '#ff8800', bg: '#442200', walkable: false, transparent: false },
+  steamVent:         { char: '≋', fg: '#cccccc', bg: '#445566', walkable: true, transparent: true },
+  goldPile:          { char: '¤', fg: '#ffcc44', bg: '#1a0a2a', walkable: true, transparent: true },
+  magicSpring:       { char: '∉', fg: '#44ccff', bg: '#0a1a2a', walkable: true, transparent: true },
+  hiddenAltar:       { char: '☂', fg: '#cc88ff', bg: '#1a0a2a', walkable: true, transparent: true },
+  libraryShelf:      { char: '≡', fg: '#ccaa66', bg: '#1a0a2a', walkable: true, transparent: true },
+  fungiPatch:        { char: '♣', fg: '#44cc44', bg: '#0a1a0a', walkable: true, transparent: true },
+  hiddenSarcophagus: { char: '▶', fg: '#aa8866', bg: '#1a0a2a', walkable: false, transparent: false },
 };
+
+// ============================================================
+// Connectivity verification — ensures stairs are reachable from start
+// ============================================================
+
+export function verifyConnectivity(map: Tile[][], playerStart: Position, stairsDown: Position): boolean {
+  const h = map.length;
+  const w = map[0]?.length ?? 0;
+  const visited = new Set<string>();
+  const queue: [number, number][] = [[playerStart.x, playerStart.y]];
+  visited.add(`${playerStart.x},${playerStart.y}`);
+  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+
+  while (queue.length > 0) {
+    const [cx, cy] = queue.shift()!;
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx, ny = cy + dy;
+      const key = `${nx},${ny}`;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h || visited.has(key)) continue;
+      const tile = map[ny]?.[nx];
+      if (!tile) continue;
+      if (tile.walkable || tile.type === TileType.Door || tile.type === TileType.DoorOpen || tile.type === TileType.EliteDoor) {
+        visited.add(key);
+        if (nx === stairsDown.x && ny === stairsDown.y) return true;
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  return visited.has(`${stairsDown.x},${stairsDown.y}`);
+}
+
+/**
+ * Find nearest walkable tile from a position (BFS).
+ * Used by emergency corridor carving when start/stairs might be on non-walkable tiles.
+ */
+export function findNearestWalkable(map: Tile[][], pos: Position): Position {
+  const h = map.length;
+  const w = map[0]?.length ?? 0;
+  // If already walkable, return as-is
+  if (pos.y >= 0 && pos.y < h && pos.x >= 0 && pos.x < w) {
+    const tile = map[pos.y]?.[pos.x];
+    if (tile && (tile.walkable || tile.type === TileType.Door || tile.type === TileType.DoorOpen || tile.type === TileType.EliteDoor)) {
+      return pos;
+    }
+  }
+  // BFS for nearest walkable tile
+  const visited = new Set<string>([`${pos.x},${pos.y}`]);
+  const queue: [number, number][] = [[pos.x, pos.y]];
+  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  while (queue.length > 0) {
+    const [cx, cy] = queue.shift()!;
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx, ny = cy + dy;
+      const key = `${nx},${ny}`;
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h || visited.has(key)) continue;
+      visited.add(key);
+      const tile = map[ny]?.[nx];
+      if (tile && (tile.walkable || tile.type === TileType.Door || tile.type === TileType.DoorOpen || tile.type === TileType.EliteDoor)) {
+        return { x: nx, y: ny };
+      }
+      queue.push([nx, ny]);
+    }
+  }
+  return pos; // Fallback
+}
+
+/**
+ * Find a walkable tile within a specific room boundary.
+ * Avoids finding tiles in disconnected regions outside the room.
+ */
+export function findWalkableInRoom(map: Tile[][], room: Room): Position | null {
+  const h = map.length;
+  const w = map[0]?.length ?? 0;
+  // Check center first
+  if (room.centerY >= 0 && room.centerY < h && room.centerX >= 0 && room.centerX < w) {
+    const tile = map[room.centerY]?.[room.centerX];
+    if (tile && (tile.walkable || tile.type === TileType.Door || tile.type === TileType.DoorOpen || tile.type === TileType.EliteDoor)) {
+      return { x: room.centerX, y: room.centerY };
+    }
+  }
+  // Scan room interior for any walkable tile
+  for (let y = room.y + 1; y < room.y + room.h - 1; y++) {
+    for (let x = room.x + 1; x < room.x + room.w - 1; x++) {
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        const tile = map[y]?.[x];
+        if (tile && (tile.walkable || tile.type === TileType.Door || tile.type === TileType.DoorOpen || tile.type === TileType.EliteDoor)) {
+          return { x, y };
+        }
+      }
+    }
+  }
+  return null;
+}
 
 // ============================================================
 // Boss Arena Support
@@ -283,7 +392,12 @@ export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId:
   const bossDef = BOSS_DEFS[Math.min(bossIndex, BOSS_DEFS.length - 1)];
   if (!bossDef) return null;
 
-  const bossRoom = rooms.length > 2 ? rooms[rooms.length - 2] : rooms[rooms.length - 1];
+  // Pick the largest room for the boss arena (skip start room if known)
+  const bossRoom = rooms.reduce((best, room) => {
+    const area = room.w * room.h;
+    const bestArea = best.w * best.h;
+    return area > bestArea ? room : best;
+  }, rooms[rooms.length - 1]);
 
   // Build arena objects
   const arenaObjectDefs = BOSS_ARENA_OBJECTS[bossDef.id];
@@ -308,6 +422,8 @@ export function placeBoss(rooms: Room[], floor: number, _biome: Biome): { defId:
 export function placeArenaObjects(map: Tile[][], arenaData: BossArenaData): void {
   for (const obj of arenaData.objects) {
     if (obj.y >= 0 && obj.y < map.length && obj.x >= 0 && obj.x < map[0].length) {
+      // Never overwrite StairsDown — player must be able to descend
+      if (map[obj.y][obj.x].type === TileType.StairsDown) continue;
       const defaults = NEW_TILE_DEFAULTS[obj.type];
       if (defaults) {
         map[obj.y][obj.x] = makeTile(obj.type, defaults.char, defaults.fg, defaults.bg, defaults.walkable, defaults.transparent);
@@ -319,6 +435,56 @@ export function placeArenaObjects(map: Tile[][], arenaData: BossArenaData): void
 // ============================================================
 // Elite and Special Rooms Support
 // ============================================================
+
+function placeHiddenRoomContent(
+  map: Tile[][],
+  roomType: HiddenRoomType,
+  positions: Position[],
+  center: Position,
+  roomW: number,
+  roomH: number,
+  hx: number,
+  hy: number,
+  rng: SeededRandom,
+  floor: number,
+): void {
+  switch (roomType) {
+    case HiddenRoomType.Slaughterhouse:
+    case HiddenRoomType.Treasury:
+    case HiddenRoomType.Armory:
+    case HiddenRoomType.AlchemyLab:
+    case HiddenRoomType.Library:
+    case HiddenRoomType.FungiPatch:
+    case HiddenRoomType.Empty:
+    case HiddenRoomType.MonsterNest:
+      // Populated in enterFloor() with items/enemies
+      break;
+
+    case HiddenRoomType.MagicSpring: {
+      const tile = NEW_TILE_DEFAULTS['magicSpring']!;
+      map[center.y][center.x] = makeTile(TileType.MagicSpring, tile.char, tile.fg, tile.bg, tile.walkable, tile.transparent);
+      break;
+    }
+
+    case HiddenRoomType.HiddenAltar: {
+      const tile = NEW_TILE_DEFAULTS['hiddenAltar']!;
+      map[center.y][center.x] = makeTile(TileType.HiddenAltar, tile.char, tile.fg, tile.bg, tile.walkable, tile.transparent);
+      break;
+    }
+
+    case HiddenRoomType.AncientTomb: {
+      const tile = NEW_TILE_DEFAULTS['hiddenSarcophagus']!;
+      map[center.y][center.x] = makeTile(TileType.HiddenSarcophagus, tile.char, tile.fg, tile.bg, tile.walkable, tile.transparent);
+      break;
+    }
+
+    case HiddenRoomType.VoidRift: {
+      const tile = NEW_TILE_DEFAULTS['voidRift']!;
+      map[center.y][center.x] = makeTile(TileType.VoidRiftRoom, tile.char, tile.fg, tile.bg, tile.walkable, tile.transparent);
+      break;
+    }
+  }
+}
 
 function findRoomDoor(map: Tile[][], room: Room): Position | null {
   // Search room boundary for corridor/door connections
@@ -385,20 +551,22 @@ export function placeEliteAndSpecialRooms(
   floor: number,
   rng: SeededRandom,
   enemyIds: string[],
-  _biome: Biome,
+  biome: Biome,
 ): {
   eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | undefined;
   eliteRoom: Room | undefined;
   specialRooms: { type: TileType; room: Room; pos: Position }[];
   secretWalls: Position[];
+  hiddenRooms: HiddenRoomData[];
 } {
   let eliteEnemy: { defId: string; pos: Position; isElite: true; eliteAffix: EliteAffix } | undefined = undefined;
   let eliteRoom: Room | undefined = undefined;
   const specialRooms: { type: TileType; room: Room; pos: Position }[] = [];
   const secretWalls: Position[] = [];
+  const hiddenRooms: HiddenRoomData[] = [];
 
   const nonStartRooms = rooms.slice(1);
-  if (nonStartRooms.length < 2) return { eliteEnemy, eliteRoom, specialRooms, secretWalls };
+  if (nonStartRooms.length < 2) return { eliteEnemy, eliteRoom, specialRooms, secretWalls, hiddenRooms };
 
   // Elite room (40% chance, not on boss floors)
   if (floor % 5 !== 0 && rng.next() < SPECIAL_ROOM_CHANCES.eliteRoom) {
@@ -406,9 +574,9 @@ export function placeEliteAndSpecialRooms(
     const room = nonStartRooms[roomIdx];
     eliteRoom = room;
 
-    // Place elite door at room entrance
+    // Place elite door at room entrance (but never overwrite StairsDown)
     const doorPos = findRoomDoor(map, room);
-    if (doorPos) {
+    if (doorPos && map[doorPos.y][doorPos.x].type !== TileType.StairsDown) {
       const d = NEW_TILE_DEFAULTS['eliteDoor']!;
       map[doorPos.y][doorPos.x] = makeTile(TileType.EliteDoor, d.char, d.fg, d.bg, d.walkable, d.transparent);
     }
@@ -424,53 +592,128 @@ export function placeEliteAndSpecialRooms(
     eliteEnemy = { defId, pos, isElite: true, eliteAffix: affix };
   }
 
-  // Inscription room (20% chance)
+  // Inscription room (20% chance) — skip if would overwrite StairsDown
   if (rng.next() < SPECIAL_ROOM_CHANCES.inscriptionRoom && nonStartRooms.length > 2) {
     const room = nonStartRooms[rng.nextInt(0, nonStartRooms.length - 1)];
     const pos = { x: room.centerX, y: room.centerY };
-    const d = NEW_TILE_DEFAULTS['inscription']!;
-    map[pos.y][pos.x] = makeTile(TileType.Inscription, d.char, d.fg, d.bg, d.walkable, d.transparent);
-    specialRooms.push({ type: TileType.Inscription, room, pos });
+    if (map[pos.y][pos.x].type !== TileType.StairsDown) {
+      const d = NEW_TILE_DEFAULTS['inscription']!;
+      map[pos.y][pos.x] = makeTile(TileType.Inscription, d.char, d.fg, d.bg, d.walkable, d.transparent);
+      specialRooms.push({ type: TileType.Inscription, room, pos });
+    }
   }
 
-  // Fountain room (10% chance)
+  // Fountain room (10% chance) — skip if would overwrite StairsDown
   if (rng.next() < SPECIAL_ROOM_CHANCES.fountainRoom && nonStartRooms.length > 3) {
     const room = nonStartRooms[rng.nextInt(0, nonStartRooms.length - 1)];
     const pos = { x: room.centerX, y: room.centerY };
-    const d = NEW_TILE_DEFAULTS['fountain']!;
-    map[pos.y][pos.x] = makeTile(TileType.Fountain, d.char, d.fg, d.bg, d.walkable, d.transparent);
-    specialRooms.push({ type: TileType.Fountain, room, pos });
+    if (map[pos.y][pos.x].type !== TileType.StairsDown) {
+      const d = NEW_TILE_DEFAULTS['fountain']!;
+      map[pos.y][pos.x] = makeTile(TileType.Fountain, d.char, d.fg, d.bg, d.walkable, d.transparent);
+      specialRooms.push({ type: TileType.Fountain, room, pos });
+    }
   }
 
-  // Secret walls (1-2 per floor)
+  // Secret walls (1-2 per floor): create hidden rooms with secret wall entrances
   const wallCount = rng.nextInt(1, 2);
   for (let i = 0; i < wallCount; i++) {
     const room = nonStartRooms[rng.nextInt(0, nonStartRooms.length - 1)];
     const wallPos = findRoomBoundaryWall(map, room, rng);
-    if (wallPos) {
-      const outsideX = wallPos.x < room.centerX ? wallPos.x - 2 : wallPos.x + 2;
-      const outsideY = wallPos.y < room.centerY ? wallPos.y - 2 : wallPos.y + 2;
-      // Create small hidden room (3x3)
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = outsideX + dx;
-          const ny = outsideY + dy;
-          if (ny >= 2 && ny < map.length - 2 && nx >= 2 && nx < map[0].length - 2) {
-            map[ny][nx] = makeTile(TileType.Floor, '.', '#555555', 'transparent', true, true);
-          }
+    if (!wallPos) continue;
+
+    // Determine which direction is "outside" the room from the wall
+    let dirX = 0;
+    let dirY = 0;
+    if (wallPos.y === room.y) dirY = -1;                    // Top wall → go up
+    else if (wallPos.y === room.y + room.h) dirY = 1;      // Bottom wall → go down
+    else if (wallPos.x === room.x) dirX = -1;              // Left wall → go left
+    else if (wallPos.x === room.x + room.w) dirX = 1;      // Right wall → go right
+    else {
+      // Fallback: use direction toward room center
+      dirX = room.centerX > wallPos.x ? -1 : room.centerX < wallPos.x ? 1 : 0;
+      dirY = room.centerY > wallPos.y ? -1 : room.centerY < wallPos.y ? 1 : 0;
+      if (dirX !== 0) dirY = 0;
+    }
+
+    // Variable hidden room size (3-5 each dimension)
+    const roomW = rng.nextInt(3, 5);
+    const roomH = rng.nextInt(3, 5);
+
+    // Calculate hidden room top-left corner, ensuring it's directly adjacent to the wall
+    let hx: number;
+    let hy: number;
+    if (dirY === -1) {
+      hx = wallPos.x - Math.floor(roomW / 2);
+      hy = wallPos.y - roomH;
+    } else if (dirY === 1) {
+      hx = wallPos.x - Math.floor(roomW / 2);
+      hy = wallPos.y + 1;
+    } else if (dirX === -1) {
+      hx = wallPos.x - roomW;
+      hy = wallPos.y - Math.floor(roomH / 2);
+    } else {
+      hx = wallPos.x + 1;
+      hy = wallPos.y - Math.floor(roomH / 2);
+    }
+
+    // Pre-check: verify the hidden room area is entirely within Wall tiles (no overlap with existing rooms)
+    let canCarve = true;
+    for (let dy = 0; dy < roomH; dy++) {
+      for (let dx = 0; dx < roomW; dx++) {
+        const cx = hx + dx;
+        const cy = hy + dy;
+        if (cy < 1 || cy >= map.length - 1 || cx < 1 || cx >= map[0].length - 1) {
+          canCarve = false;
+          break;
+        }
+        // Only carve into Wall tiles; skip if tile is already walkable (existing room/corridor)
+        if (map[cy][cx].walkable) {
+          canCarve = false;
+          break;
         }
       }
-      // Replace wall with secret wall (H8 fix: only if current tile is not a special type)
-      const currentTile = map[wallPos.y][wallPos.x];
-      if (!currentTile.walkable) {
-        const d = NEW_TILE_DEFAULTS['secretWall']!;
-        map[wallPos.y][wallPos.x] = makeTile(TileType.SecretWall, d.char, d.fg, d.bg, d.walkable, d.transparent);
-        secretWalls.push(wallPos);
+      if (!canCarve) break;
+    }
+    if (!canCarve) continue;
+
+    // Carve hidden room with HiddenFloor tiles (all tiles confirmed to be Wall above)
+    const roomPositions: Position[] = [];
+    const d = NEW_TILE_DEFAULTS['hiddenFloor']!;
+    for (let dy = 0; dy < roomH; dy++) {
+      for (let dx = 0; dx < roomW; dx++) {
+        const cx = hx + dx;
+        const cy = hy + dy;
+        map[cy][cx] = makeTile(TileType.HiddenFloor, d.char, d.fg, d.bg, d.walkable, d.transparent);
+        roomPositions.push({ x: cx, y: cy });
       }
     }
+
+    // Place secret wall at the entrance
+    const sw = NEW_TILE_DEFAULTS['secretWall']!;
+    map[wallPos.y][wallPos.x] = makeTile(TileType.SecretWall, sw.char, sw.fg, sw.bg, sw.walkable, sw.transparent);
+    secretWalls.push(wallPos);
+
+    // Pick hidden room type based on weights
+    const typeEntries = Object.entries(HIDDEN_ROOM_WEIGHTS) as [HiddenRoomType, number][];
+    const totalWeight = typeEntries.reduce((sum, [, w]) => sum + w, 0);
+    let roll = rng.nextInt(1, totalWeight);
+    let roomType: HiddenRoomType = HiddenRoomType.Empty;
+    for (const [t, w] of typeEntries) {
+      roll -= w;
+      if (roll <= 0) { roomType = t; break; }
+    }
+
+    const center: Position = {
+      x: hx + Math.floor(roomW / 2),
+      y: hy + Math.floor(roomH / 2),
+    };
+
+    placeHiddenRoomContent(map, roomType, roomPositions, center, roomW, roomH, hx, hy, rng, floor);
+
+    hiddenRooms.push({ type: roomType, positions: roomPositions, center, secretWallPos: wallPos });
   }
 
-  return { eliteEnemy, eliteRoom, specialRooms, secretWalls };
+  return { eliteEnemy, eliteRoom, specialRooms, secretWalls, hiddenRooms };
 }
 
 export function addEnvironment(map: Tile[][], rooms: Room[], biome: Biome, rng: SeededRandom, floor: number): void {

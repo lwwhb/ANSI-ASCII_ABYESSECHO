@@ -282,5 +282,22 @@ export const MUSIC_TRACKS: TrackDef[] = [
     gain: 0.15,
     melody: gameOverMelody,
     bass: gameOverBass
+  },
+  // Track 10: Secret Room (70 BPM, sine, Eb minor, mysterious shimmer)
+  {
+    id: 'secretRoom',
+    bpm: 70,
+    wave: 'sine',
+    gain: 0.14,
+    melody: rep([
+      N(63, 4), R(4), N(66, 4), R(4),     // Eb4, F#4
+      N(70, 6), R(2), N(68, 4), R(4),     // Bb4, Ab4
+      N(63, 4), R(4), N(58, 4), R(4),     // Eb4, Bb3
+      N(61, 6), R(2), N(63, 4), R(4),     // Db4, Eb4
+    ], 2),
+    bass: rep([
+      N(39, 8), R(8), N(46, 8), R(8),     // Eb2, Bb2
+      N(42, 8), R(8), N(39, 8), R(8),     // F#2, Eb2
+    ], 2)
   }
 ];

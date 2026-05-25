@@ -5,21 +5,25 @@ import {
   DungeonData, BSPNode, Room,
   createTile, fillMap,
   splitBSP, createRooms, collectRooms,
-  carveRoom, addEnvironment,
+  carveRoom, carveCorridor, addEnvironment,
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
-  placeThemedRooms,
+  placeThemedRooms, verifyConnectivity, findNearestWalkable,
 } from './DungeonGenerator';
 
 function carveWideCorridorReal(map: import('../types').Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome): void {
   const height = map.length;
   const width = map[0]?.length || 0;
   let x = x1, y = y1;
+  // Carveable tiles (same set as carveCorridor in DungeonGenerator)
+  const carveable = new Set([
+    TileType.Wall, TileType.VoidWall, TileType.Sarcophagus, TileType.HiddenSarcophagus,
+  ]);
 
   while (x !== x2) {
     if (x >= 0 && x < width && y >= 0 && y < height) {
       for (let dy = 0; dy < 2 && y + dy < height; dy++) {
-        if (y + dy >= 0 && map[y + dy][x].type === TileType.Wall) {
+        if (y + dy >= 0 && carveable.has(map[y + dy][x].type)) {
           map[y + dy][x] = createTile(TileType.Corridor, biome);
         }
       }
@@ -29,7 +33,7 @@ function carveWideCorridorReal(map: import('../types').Tile[][], x1: number, y1:
   while (y !== y2) {
     if (x >= 0 && x < width && y >= 0 && y < height) {
       for (let dx = 0; dx < 2 && x + dx < width; dx++) {
-        if (x + dx >= 0 && map[y][x + dx].type === TileType.Wall) {
+        if (x + dx >= 0 && carveable.has(map[y][x + dx].type)) {
           map[y][x + dx] = createTile(TileType.Corridor, biome);
         }
       }
@@ -195,7 +199,7 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
   }
 
   // Elite + special rooms + secret walls
-  const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
+  const { eliteEnemy, eliteRoom, specialRooms, secretWalls, hiddenRooms } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
 
   // Themed rooms (excluding start, boss, shop, event, elite rooms)
   const reservedRooms: Room[] = [startRoom];
@@ -216,6 +220,30 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
 
   const { themedRooms, steamVentTurns } = placeThemedRooms(map, rooms, biome, rng, reservedRooms);
 
+  // Verify connectivity — if stairs unreachable, carve emergency corridor
+  if (!verifyConnectivity(map, playerStart, stairsDown)) {
+    const walkStart = findNearestWalkable(map, playerStart);
+    const walkStairs = findNearestWalkable(map, stairsDown);
+    carveCorridor(map, walkStart.x, walkStart.y, walkStairs.x, walkStairs.y, biome);
+    // Brute-force fallback: carve every non-walkable tile on the direct path
+    if (!verifyConnectivity(map, playerStart, stairsDown)) {
+      let x = walkStart.x, y = walkStart.y;
+      const ex = walkStairs.x, ey = walkStairs.y;
+      while (x !== ex) {
+        if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && !map[y][x].walkable) {
+          map[y][x] = createTile(TileType.Corridor, biome);
+        }
+        x += x < ex ? 1 : -1;
+      }
+      while (y !== ey) {
+        if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && !map[y][x].walkable) {
+          map[y][x] = createTile(TileType.Corridor, biome);
+        }
+        y += y < ey ? 1 : -1;
+      }
+    }
+  }
+
   return {
     map,
     rooms,
@@ -232,5 +260,6 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
     bossArenaData: boss?.arenaData,
     themedRooms,
     steamVentTurns,
+    hiddenRooms,
   };
 }

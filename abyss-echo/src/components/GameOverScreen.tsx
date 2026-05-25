@@ -147,9 +147,21 @@ const GameOverScreen: React.FC = () => {
           marginBottom: '16px',
           minWidth: '300px',
         }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {unlockedAchievements.map((a) => (
-              <span key={a.id} style={{ fontSize: '16px' }} title={`${a.nameZh}: ${a.description}`}>{a.icon}</span>
+              <div key={a.id} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                padding: '4px 8px',
+                backgroundColor: '#111122',
+                borderRadius: '4px',
+              }}>
+                <span style={{ fontSize: '16px' }}>{a.icon}</span>
+                <span style={{ color: '#ffcc44' }}>{a.nameZh}</span>
+                <span style={{ color: '#666677', fontSize: '11px' }}>{a.description}</span>
+              </div>
             ))}
           </div>
         </div>

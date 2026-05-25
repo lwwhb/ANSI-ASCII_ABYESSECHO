@@ -1,4 +1,4 @@
-export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear' | 'heartbeat' | 'stomachGrowl' | 'chainReaction' | 'relicAcquire' | 'enhanceSuccess' | 'enhanceFail' | 'bossPhase' | 'portalWarp';
+export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear' | 'heartbeat' | 'stomachGrowl' | 'chainReaction' | 'relicAcquire' | 'enhanceSuccess' | 'enhanceFail' | 'bossPhase' | 'portalWarp' | 'bump' | 'ironDoor' | 'magicSpring' | 'voidRift';
 
 export interface SfxStage {
   freq: number;        // Start frequency in Hz
@@ -198,6 +198,42 @@ export const SFX_DEFS: SfxDef[] = [
       { freq: 300, freqEnd: 600, wave: 'triangle', duration: 0.08, gain: 0.25 },
       { freq: 600, freqEnd: 300, wave: 'triangle', duration: 0.08, gain: 0.25 },
       { freq: 400, freqEnd: 200, wave: 'sine', duration: 0.1, gain: 0.2, gainEnd: 0 },
+    ],
+  },
+
+  // 21. bump: Dull thud — short low knock (100→60Hz triangle)
+  {
+    id: 'bump',
+    stages: [
+      { freq: 100, freqEnd: 60, wave: 'triangle', duration: 0.06, gain: 0.15, gainEnd: 0 },
+    ],
+  },
+
+  // 22. ironDoor: Heavy metallic scrape — low grind (150→80Hz sawtooth + 60Hz square thud)
+  {
+    id: 'ironDoor',
+    stages: [
+      { freq: 150, freqEnd: 80, wave: 'sawtooth', duration: 0.12, gain: 0.25 },
+      { freq: 60, wave: 'square', duration: 0.08, gain: 0.2, gainEnd: 0 },
+    ],
+  },
+
+  // magicSpring: Ethereal ascending chime (sine 400→600→800Hz, soft)
+  {
+    id: 'magicSpring',
+    stages: [
+      { freq: 400, freqEnd: 600, wave: 'sine', duration: 0.15, gain: 0.25 },
+      { freq: 600, freqEnd: 800, wave: 'sine', duration: 0.15, gain: 0.2 },
+      { freq: 800, wave: 'sine', duration: 0.3, gain: 0.1, gainEnd: 0 },
+    ],
+  },
+
+  // voidRift: Ominous low hum with dissonant overtone (sawtooth 60Hz + sine 90Hz)
+  {
+    id: 'voidRift',
+    stages: [
+      { freq: 60, wave: 'sawtooth', duration: 0.3, gain: 0.2 },
+      { freq: 90, wave: 'sine', duration: 0.5, gain: 0.15, gainEnd: 0 },
     ],
   },
 ];

@@ -1,5 +1,5 @@
 import { Enemy, Position, EliteAffix } from '../types';
-import { ENEMY_DEFS, BOSS_DEFS, ELITE_HP_MULT, ELITE_ATK_MULT, ELITE_DEF_BONUS, ELITE_EXP_MULT, ELITE_GOLD_MULT } from '../constants';
+import { ENEMY_DEFS, BOSS_DEFS, ELITE_HP_MULT, ELITE_ATK_MULT, getEliteDefBonus, ELITE_EXP_MULT, ELITE_GOLD_MULT } from '../constants';
 import { genId } from './Player';
 
 export function createEnemy(defId: string, pos: Position, isBoss: boolean, floor: number): Enemy | null {
@@ -92,7 +92,7 @@ export function createEliteEnemy(defId: string, pos: Position, floor: number, af
     hp: Math.floor(baseEnemy.maxHp * ELITE_HP_MULT),
     maxHp: Math.floor(baseEnemy.maxHp * ELITE_HP_MULT),
     attack: Math.floor(baseEnemy.attack * ELITE_ATK_MULT),
-    defense: baseEnemy.defense + ELITE_DEF_BONUS,
+    defense: baseEnemy.defense + getEliteDefBonus(floor),
     exp: Math.floor(baseEnemy.exp * ELITE_EXP_MULT),
     goldDrop: Math.floor(baseEnemy.goldDrop * ELITE_GOLD_MULT),
     isElite: true,

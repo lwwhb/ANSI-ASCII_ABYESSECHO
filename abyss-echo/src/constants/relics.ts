@@ -1,5 +1,5 @@
 // ============================================================
-// 遗物系统 - 24 Relic Definitions
+// 遗物系统 - 27 Relic Definitions
 // ============================================================
 
 import { RelicId, RelicRarity, RelicDef, Element } from '../types';
@@ -9,7 +9,7 @@ export const RELIC_DEFS: Record<RelicId, RelicDef> = {
   [RelicId.HungerRing]: {
     id: RelicId.HungerRing, name: '饥饿之环', icon: '🔵',
     rarity: RelicRarity.Common,
-    description: '饥饿不再掉血，但ATK-15%',
+    description: '饥饿不再掉血，饥饿速率减半，但ATK-8%',
     elementAffinity: undefined,
   },
   [RelicId.MirrorShield]: {
@@ -79,7 +79,7 @@ export const RELIC_DEFS: Record<RelicId, RelicDef> = {
     elementAffinity: undefined,
   },
 
-  // === Rare (8) ===
+  // === Rare (10) ===
   [RelicId.ComboRing]: {
     id: RelicId.ComboRing, name: '连击戒指', icon: '💍',
     rarity: RelicRarity.Rare,
@@ -124,12 +124,24 @@ export const RELIC_DEFS: Record<RelicId, RelicDef> = {
   },
   [RelicId.TimeHourglass]: {
     id: RelicId.TimeHourglass, name: '时间沙漏', icon: '⏳',
-    rarity: RelicRarity.Rare,
+    rarity: RelicRarity.Epic,
     description: '每5回合获得1次额外行动',
     elementAffinity: undefined,
   },
+  [RelicId.DarkVision]: {
+    id: RelicId.DarkVision, name: '暗视之眼', icon: '👁‍🗨',
+    rarity: RelicRarity.Rare,
+    description: '视野半径+2',
+    elementAffinity: undefined,
+  },
+  [RelicId.EchoHeart]: {
+    id: RelicId.EchoHeart, name: '回响之心', icon: '💜',
+    rarity: RelicRarity.Rare,
+    description: '进入隐藏房间时全回复HP/MP',
+    elementAffinity: undefined,
+  },
 
-  // === Epic (4) ===
+  // === Epic (5) ===
   [RelicId.VoidHeart]: {
     id: RelicId.VoidHeart, name: '虚空之心', icon: '🟣',
     rarity: RelicRarity.Epic,
@@ -154,6 +166,12 @@ export const RELIC_DEFS: Record<RelicId, RelicDef> = {
     description: '每次元素连锁触发时，获得1层随机buff（ATK/DEF/MP+3，持续3回合）',
     elementAffinity: undefined,
   },
+  [RelicId.AbyssWhisper]: {
+    id: RelicId.AbyssWhisper, name: '深渊低语', icon: '🗣️',
+    rarity: RelicRarity.Epic,
+    description: '每层首次进入新房间时揭示1个相邻SecretWall',
+    elementAffinity: undefined,
+  },
 };
 
 // 按稀有度分组的遗物ID列表（用于随机抽取）
@@ -167,10 +185,11 @@ export const RELICS_BY_RARITY: Record<RelicRarity, RelicId[]> = {
   [RelicRarity.Rare]: [
     RelicId.ComboRing, RelicId.SacrificialDagger, RelicId.ElementResonance,
     RelicId.EchoShard, RelicId.CurseVessel, RelicId.BlacksmithHammer,
-    RelicId.ExplorerDiary, RelicId.TimeHourglass,
+    RelicId.ExplorerDiary, RelicId.DarkVision, RelicId.EchoHeart,
   ],
   [RelicRarity.Epic]: [
     RelicId.VoidHeart, RelicId.ChaosCore, RelicId.EternalFlame, RelicId.FateWeaver,
+    RelicId.AbyssWhisper, RelicId.TimeHourglass,
   ],
 };
 

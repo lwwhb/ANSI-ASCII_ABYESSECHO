@@ -1,4 +1,4 @@
-import { TileType, Biome, CharacterClass, Rarity, Element, EnemyBehavior, EnemyDef, PotionEffect, ScrollEffect, SkillDef, TalentDef, AchievementDef, GameEventDef, EquipmentEffect, EliteAffix, BossBlessing } from '../types';
+import { TileType, Biome, CharacterClass, Rarity, Element, EnemyBehavior, EnemyDef, PotionEffect, ScrollEffect, SkillDef, TalentDef, AchievementDef, GameEventDef, EquipmentEffect, EliteAffix, BossBlessing, HiddenRoomType } from '../types';
 
 // ============================================================
 // Map Dimensions
@@ -43,7 +43,7 @@ export const CLASS_DEFS: Record<CharacterClass, {
     nameZh: '法师',
     description: '精通奥术的施法者。高魔力与法术伤害，但身躯脆弱。',
     baseStats: { str: 6, dex: 8, int: 14, vit: 8 },
-    baseHp: 25,
+    baseHp: 30,
     baseMp: 25,
     char: '@',
     fg: '#66aaff',
@@ -55,7 +55,7 @@ export const CLASS_DEFS: Record<CharacterClass, {
     nameZh: '游侠',
     description: '暗影中的致命猎手。高敏捷与暴击率，擅长远程与闪避。',
     baseStats: { str: 8, dex: 14, int: 8, vit: 8 },
-    baseHp: 20,
+    baseHp: 25,
     baseMp: 10,
     char: '@',
     fg: '#44ff66',
@@ -109,9 +109,17 @@ export const TILE_CHARS: Record<TileType, { char: string; fg: string; bg: string
   [TileType.EliteDoor]:    { char: '▦', fg: '#ffd700', bg: 'transparent', walkable: false, transparent: true },
   [TileType.Fountain]:     { char: '⌠', fg: '#44aaff', bg: 'transparent', walkable: true,  transparent: true },
   [TileType.Inscription]:  { char: '▐', fg: '#ddddaa', bg: 'transparent', walkable: true,  transparent: true },
-  [TileType.SecretWall]:   { char: '#', fg: '#444444', bg: '#222222', walkable: true,  transparent: true },
+  [TileType.SecretWall]:   { char: '█', fg: '#555566', bg: '#555566', walkable: true,  transparent: false },
+  [TileType.HiddenFloor]:  { char: '·', fg: '#9977cc', bg: '#1a0a2a', walkable: true,  transparent: false },
   [TileType.Monument]:     { char: '☥', fg: '#ffd700', bg: 'transparent', walkable: true,  transparent: true },
   [TileType.SpikeTrap]:    { char: '▲', fg: '#8888ff', bg: '#222244', walkable: true,  transparent: true },
+  [TileType.GoldPile]:           { char: '¤', fg: '#ffcc44', bg: '#1a0a2a', walkable: true,  transparent: true },
+  [TileType.MagicSpring]:        { char: '∉', fg: '#44ccff', bg: '#0a1a2a', walkable: true,  transparent: true },
+  [TileType.HiddenAltar]:        { char: '☂', fg: '#cc88ff', bg: '#1a0a2a', walkable: true,  transparent: true },
+  [TileType.LibraryShelf]:       { char: '≡', fg: '#ccaa66', bg: '#1a0a2a', walkable: true,  transparent: true },
+  [TileType.VoidRiftRoom]:       { char: '⊙', fg: '#cc44ff', bg: '#0a0015', walkable: true,  transparent: true },
+  [TileType.FungiPatch]:         { char: '♣', fg: '#44cc44', bg: '#0a1a0a', walkable: true,  transparent: true },
+  [TileType.HiddenSarcophagus]:  { char: '▶', fg: '#aa8866', bg: '#1a0a2a', walkable: false, transparent: false },
   [TileType.WeaponRack]:   { char: '⋔', fg: '#aaaaaa', bg: '#443322', walkable: false, transparent: false },
   [TileType.Forge]:        { char: '⚒', fg: '#ff8800', bg: '#442200', walkable: false, transparent: false },
   [TileType.SteamVent]:    { char: '≋', fg: '#cccccc', bg: '#445566', walkable: true,  transparent: true },
@@ -122,12 +130,28 @@ export const BIOME_TILES: Record<Biome, Partial<Record<TileType, { char?: string
   [Biome.StoneDungeon]: {
     [TileType.Wall]:  { fg: '#555566', bg: '#555566' },
     [TileType.Floor]: { fg: '#666677', bg: '#111122' },
+    [TileType.SecretWall]: { char: '█', fg: '#555566', bg: '#555566' },
+    [TileType.GoldPile]: { char: '¤', fg: '#ffcc44' },
+    [TileType.MagicSpring]: { char: '∉', fg: '#44ccff' },
+    [TileType.HiddenAltar]: { char: '☂', fg: '#cc88ff' },
+    [TileType.LibraryShelf]: { char: '≡', fg: '#ccaa66' },
+    [TileType.VoidRiftRoom]: { char: '⊙', fg: '#cc44ff' },
+    [TileType.FungiPatch]: { char: '♣', fg: '#44cc44' },
+    [TileType.HiddenSarcophagus]: { char: '▶', fg: '#aa8866' },
   },
   [Biome.CrystalCavern]: {
     [TileType.Wall]:         { char: '▓', fg: '#7766bb', bg: '#7766bb' },
     [TileType.Floor]:        { char: '·', fg: '#9988cc', bg: '#1a0a2e' },
     [TileType.Water]:        { char: '≈', fg: '#88aaff', bg: '#1a1a4e' },
     [TileType.ShallowWater]: { char: '≈', fg: '#88aaff', bg: '#1a1a4e' },
+    [TileType.SecretWall]:   { char: '▓', fg: '#7766bb', bg: '#7766bb' },
+    [TileType.GoldPile]: { char: '¤', fg: '#ffcc44' },
+    [TileType.MagicSpring]: { char: '∉', fg: '#44ccff' },
+    [TileType.HiddenAltar]: { char: '☂', fg: '#cc88ff' },
+    [TileType.LibraryShelf]: { char: '≡', fg: '#ccaa66' },
+    [TileType.VoidRiftRoom]: { char: '⊙', fg: '#cc44ff' },
+    [TileType.FungiPatch]: { char: '♣', fg: '#44cc44' },
+    [TileType.HiddenSarcophagus]: { char: '▶', fg: '#aa8866' },
   },
   [Biome.AncientCrypt]: {
     [TileType.Wall]:         { char: '█', fg: '#667766', bg: '#667766' },
@@ -136,18 +160,42 @@ export const BIOME_TILES: Record<Biome, Partial<Record<TileType, { char?: string
     [TileType.CursedGround]: { char: '·', fg: '#8877aa', bg: '#151020' },
     [TileType.Torch]:        { char: '♫', fg: '#ffaa44', bg: '#1a221a' },
     [TileType.Sarcophagus]:  { char: '■', fg: '#999988', bg: '#1a221a' },
+    [TileType.SecretWall]:   { char: '█', fg: '#667766', bg: '#667766' },
+    [TileType.GoldPile]: { char: '¤', fg: '#ffcc44' },
+    [TileType.MagicSpring]: { char: '∉', fg: '#44ccff' },
+    [TileType.HiddenAltar]: { char: '☂', fg: '#cc88ff' },
+    [TileType.LibraryShelf]: { char: '≡', fg: '#ccaa66' },
+    [TileType.VoidRiftRoom]: { char: '⊙', fg: '#cc44ff' },
+    [TileType.FungiPatch]: { char: '♣', fg: '#44cc44' },
+    [TileType.HiddenSarcophagus]: { char: '▶', fg: '#aa8866' },
   },
   [Biome.LavaCore]: {
     [TileType.Wall]:       { char: '▓', fg: '#994422', bg: '#994422' },
     [TileType.Floor]:      { char: '·', fg: '#886644', bg: '#1a0f0a' },
     [TileType.Lava]:       { char: '≈', fg: '#ff6622', bg: '#551100' },
     [TileType.CooledLava]: { char: '≈', fg: '#aa5533', bg: '#221100' },
+    [TileType.SecretWall]: { char: '▓', fg: '#994422', bg: '#994422' },
+    [TileType.GoldPile]: { char: '¤', fg: '#ffcc44' },
+    [TileType.MagicSpring]: { char: '∉', fg: '#44ccff' },
+    [TileType.HiddenAltar]: { char: '☂', fg: '#cc88ff' },
+    [TileType.LibraryShelf]: { char: '≡', fg: '#ccaa66' },
+    [TileType.VoidRiftRoom]: { char: '⊙', fg: '#cc44ff' },
+    [TileType.FungiPatch]: { char: '♣', fg: '#44cc44' },
+    [TileType.HiddenSarcophagus]: { char: '▶', fg: '#aa8866' },
   },
   [Biome.VoidAbyss]: {
     [TileType.Wall]:  { char: '█', fg: '#6644aa', bg: '#6644aa' },
     [TileType.Floor]: { char: '·', fg: '#8866cc', bg: '#0a0a1e' },
     [TileType.VoidWall]: { char: '█', fg: '#5533aa', bg: '#5533aa' },
     [TileType.Portal]:   { char: '⊙', fg: '#dd55ff', bg: '#0a0a1e' },
+    [TileType.SecretWall]: { char: '█', fg: '#6644aa', bg: '#6644aa' },
+    [TileType.GoldPile]: { char: '¤', fg: '#ffcc44' },
+    [TileType.MagicSpring]: { char: '∉', fg: '#44ccff' },
+    [TileType.HiddenAltar]: { char: '☂', fg: '#cc88ff' },
+    [TileType.LibraryShelf]: { char: '≡', fg: '#ccaa66' },
+    [TileType.VoidRiftRoom]: { char: '⊙', fg: '#cc44ff' },
+    [TileType.FungiPatch]: { char: '♣', fg: '#44cc44' },
+    [TileType.HiddenSarcophagus]: { char: '▶', fg: '#aa8866' },
   },
 };
 
@@ -216,7 +264,7 @@ export const ENEMY_DEFS: EnemyDef[] = [
   { id: 'vampire',   name: '吸血鬼',   char: '√', fg: '#aa2222', hp: 55, attack: 15, defense: 9,  exp: 48, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 16, speed: 2, dropChance: 0.45, alertRadius: 7, specialAbility: 'drain', goldDrop: 30 },
   { id: 'lich',      name: '巫妖',     char: 'L', fg: '#6644cc', hp: 60, attack: 18, defense: 8,  exp: 60, behavior: EnemyBehavior.CallAlly,     element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 18, speed: 1, dropChance: 0.5, alertRadius: 8, specialAbility: 'summon', goldDrop: 40 },
   { id: 'lavaWorm',     name: '熔岩虫', char: '₩', fg: '#ff6622', hp: 48, attack: 12, defense: 6,  exp: 40, behavior: EnemyBehavior.Berserk,     element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 16, speed: 2, dropChance: 0.3, alertRadius: 6, specialAbility: 'lavaSwim', goldDrop: 18 },
-  { id: 'obsidianGolem', name: '黑曜石巨人', char: 'Θ', fg: '#443344', hp: 90, attack: 8,  defense: 18, exp: 55, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 16, speed: 0, dropChance: 0.4, alertRadius: 3, specialAbility: 'blockade', goldDrop: 25 },
+  { id: 'obsidianGolem', name: '黑曜石巨人', char: 'Θ', fg: '#443344', hp: 80, attack: 12, defense: 16, exp: 55, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 16, speed: 0, dropChance: 0.4, alertRadius: 3, specialAbility: 'blockade', goldDrop: 25 },
   // Floor 21+
   { id: 'dragon',    name: '巨龙',     char: 'Ð', fg: '#ff4422', hp: 100,attack: 22, defense: 15, exp: 100,behavior: EnemyBehavior.Aggressive,  element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 20, speed: 1, dropChance: 0.6, alertRadius: 9, specialAbility: 'breath', goldDrop: 60 },
   { id: 'voidWalker',name: '虚空行者', char: 'Ø', fg: '#8844ff', hp: 80, attack: 20, defense: 11, exp: 80, behavior: EnemyBehavior.Aggressive,  element: Element.Lightning,  weakness: Element.None,       resistance: Element.Lightning,   minFloor: 22, speed: 2, dropChance: 0.5, alertRadius: 10, specialAbility: 'teleport', goldDrop: 50 },
@@ -227,7 +275,7 @@ export const ENEMY_DEFS: EnemyDef[] = [
 
 // Boss definitions (every 5 floors) - BUG FIX: defId now matches lookup
 export const BOSS_DEFS: (EnemyDef & { isBoss: true })[] = [
-  { id: 'goblinKing',   name: '哥布林王',   char: '₲', fg: '#ffcc44', hp: 60,  attack: 12, defense: 7,  exp: 50,  behavior: EnemyBehavior.Boss, element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 5,  speed: 1, dropChance: 1.0, alertRadius: 8, isBoss: true, specialAbility: 'summon', goldDrop: 50 },
+  { id: 'goblinKing',   name: '哥布林王',   char: '₲', fg: '#ffcc44', hp: 50,  attack: 12, defense: 7,  exp: 50,  behavior: EnemyBehavior.Boss, element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 5,  speed: 1, dropChance: 1.0, alertRadius: 8, isBoss: true, specialAbility: 'summon', goldDrop: 50 },
   { id: 'spiderQueen',  name: '蜘蛛女王',   char: 'Q', fg: '#884422', hp: 95,  attack: 16, defense: 9,  exp: 80,  behavior: EnemyBehavior.Boss, element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 10, speed: 1, dropChance: 1.0, alertRadius: 8, isBoss: true, specialAbility: 'web', goldDrop: 80 },
   { id: 'deathKnight',  name: '死亡骑士',   char: 'Ҝ', fg: '#cc44aa', hp: 150, attack: 24, defense: 15, exp: 150, behavior: EnemyBehavior.Boss, element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 15, speed: 1, dropChance: 1.0, alertRadius: 8, isBoss: true, specialAbility: 'drain', goldDrop: 120 },
   { id: 'demonLord',    name: '恶魔领主',   char: '&', fg: '#ff2222', hp: 190, attack: 30, defense: 17, exp: 250, behavior: EnemyBehavior.Boss, element: Element.Fire,       weakness: Element.Ice,        resistance: Element.Fire,       minFloor: 20, speed: 1, dropChance: 1.0, alertRadius: 10, isBoss: true, specialAbility: 'fireball', goldDrop: 200 },
@@ -257,7 +305,7 @@ export const BOSS_PHASES: Record<string, BossPhaseConfig[]> = {
     { nameZh: '蛛后之怒', hpThreshold: 0.25, atkBonus: 4, defBonus: 0, speedOverride: 2, newAbilities: ['cocoon'], messageZh: '蜘蛛女王进入了【蛛后之怒】阶段！' },
   ],
   deathKnight: [
-    { nameZh: '亡者苏醒', hpThreshold: 0.5, atkBonus: 0, defBonus: 4, newAbilities: ['raiseDead'], messageZh: '死亡骑士进入了【亡者苏醒】阶段！' },
+    { nameZh: '亡者苏醒', hpThreshold: 0.5, atkBonus: 3, defBonus: -2, newAbilities: ['raiseDead'], messageZh: '死亡骑士进入了【亡者苏醒】阶段！' },
     { nameZh: '灵魂收割', hpThreshold: 0.25, atkBonus: 6, defBonus: -4, newAbilities: [], messageZh: '死亡骑士进入了【灵魂收割】阶段！' },
   ],
   demonLord: [
@@ -290,11 +338,18 @@ export const ELITE_AFFIX_DEFS: Record<EliteAffix, { nameZh: string; description:
 };
 
 export const ELITE_CHANCE_PER_FLOOR = 0.3;
+export const ENEMY_SPECIAL_CHANCE = 0.3;
+export const ELITE_REGEN_RATE = 0.05;
 export const ELITE_HP_MULT = 2.0;
-export const ELITE_ATK_MULT = 1.3;
-export const ELITE_DEF_BONUS = 3;
+export const ELITE_ATK_MULT = 1.5;
+export const ELITE_DEF_BONUS_SCALE = [3, 5, 8, 10, 12]; // per biome tier: Stone, Crystal, Crypt, Lava, Void
 export const ELITE_EXP_MULT = 2.5;
 export const ELITE_GOLD_MULT = 3.0;
+
+export function getEliteDefBonus(floor: number): number {
+  const biomeIdx = floor < 6 ? 0 : floor < 11 ? 1 : floor < 16 ? 2 : floor < 21 ? 3 : 4;
+  return ELITE_DEF_BONUS_SCALE[biomeIdx];
+}
 
 export const FLOOR_DESCRIPTIONS: Record<number, string> = {
   1: '潮湿的石壁上渗出冰冷的水珠，火把的光芒在黑暗中摇曳。你的冒险从这里开始。',
@@ -636,7 +691,7 @@ export const BIOME_CONFIG: Record<Biome, {
     enemyIds: ['slime', 'rat', 'bat', 'goblin', 'caveScorpion', 'gargoyle', 'skeleton'],
     hasWater: false, hasLava: false, hasGas: false, trapChance: 0.03,
     shopChance: 0.15, eventChance: 0.1,
-    mapWidth: 80, mapHeight: 28, itemsPerFloorBase: 5, itemsPerFloorGrowth: 1.2,
+    mapWidth: 80, mapHeight: 28, itemsPerFloorBase: 7, itemsPerFloorGrowth: 1.5,
     foodDropMultiplier: 1.5, scrollDropMultiplier: 1.3, potionDropMultiplier: 1.0,
   },
   [Biome.CrystalCavern]: {
@@ -694,6 +749,22 @@ export const SPECIAL_ROOM_CHANCES = {
   inscriptionRoom: 0.2,
   trapRoom: 0.15,
   challengeRoom: 0.08,
+};
+
+// Hidden room type weights (out of 100 total)
+export const HIDDEN_ROOM_WEIGHTS: Record<HiddenRoomType, number> = {
+  [HiddenRoomType.Slaughterhouse]: 15,
+  [HiddenRoomType.Treasury]:       15,
+  [HiddenRoomType.Armory]:         10,
+  [HiddenRoomType.AlchemyLab]:     10,
+  [HiddenRoomType.MonsterNest]:    10,
+  [HiddenRoomType.AncientTomb]:     8,
+  [HiddenRoomType.MagicSpring]:     8,
+  [HiddenRoomType.HiddenAltar]:     8,
+  [HiddenRoomType.Library]:         6,
+  [HiddenRoomType.VoidRift]:        5,
+  [HiddenRoomType.FungiPatch]:      3,
+  [HiddenRoomType.Empty]:           2,
 };
 
 export interface ArenaObjectDef {

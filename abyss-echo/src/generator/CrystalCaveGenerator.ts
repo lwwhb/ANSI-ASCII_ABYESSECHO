@@ -6,7 +6,7 @@ import {
   createTile, createWallTile, fillMap,
   carveCorridor, placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
-  placeThemedRooms,
+  placeThemedRooms, verifyConnectivity, findNearestWalkable, findWalkableInRoom,
 } from './DungeonGenerator';
 
 function floodFill(map: Tile[][], startX: number, startY: number, width: number, height: number, globalVisited: Set<string>): Set<string> {
@@ -320,8 +320,14 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
   // Player start and stairs: randomly pick far-apart clusters
   const { startRoom, stairsRoom } = pickStartAndStairs(clusters, rng, width, height);
   const playerStart = { x: startRoom.centerX, y: startRoom.centerY };
+  // Ensure player start is on a walkable tile within the room
+  const startWalkable = findWalkableInRoom(map, startRoom);
+  if (startWalkable) { playerStart.x = startWalkable.x; playerStart.y = startWalkable.y; }
 
   const stairsDown = { x: stairsRoom.centerX, y: stairsRoom.centerY };
+  // Ensure stairs position is on a walkable tile within the room
+  const stairsWalkable = findWalkableInRoom(map, stairsRoom);
+  if (stairsWalkable) { stairsDown.x = stairsWalkable.x; stairsDown.y = stairsWalkable.y; }
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
   const enemies = placeEnemies(rooms, floor, rng, config.enemyIds);
@@ -356,7 +362,7 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
   }
 
   // Elite + special rooms + secret walls
-  const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
+  const { eliteEnemy, eliteRoom, specialRooms, secretWalls, hiddenRooms } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
 
   // Themed rooms (excluding start, boss, shop, event, elite rooms)
   const reservedRooms: Room[] = [startRoom];
@@ -377,6 +383,35 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
 
   const { themedRooms, steamVentTurns } = placeThemedRooms(map, rooms, biome, rng, reservedRooms);
 
+  // Verify connectivity — if stairs unreachable, carve emergency corridor
+  if (!verifyConnectivity(map, playerStart, stairsDown)) {
+    // Aggressive fallback: carve wide path (2 corridors offset by 1)
+    const walkStart = findNearestWalkable(map, playerStart);
+    const walkStairs = findNearestWalkable(map, stairsDown);
+    carveCorridor(map, walkStart.x, walkStart.y, walkStairs.x, walkStairs.y, biome);
+    // Also carve offset corridor for wider path
+    if (walkStart.y + 1 < map.length && walkStairs.y + 1 < map.length) {
+      carveCorridor(map, walkStart.x, walkStart.y + 1, walkStairs.x, walkStairs.y + 1, biome);
+    }
+    // If STILL unreachable, brute-force: carve every tile on the path
+    if (!verifyConnectivity(map, playerStart, stairsDown)) {
+      let x = walkStart.x, y = walkStart.y;
+      const ex = walkStairs.x, ey = walkStairs.y;
+      while (x !== ex) {
+        if (y >= 0 && y < map.length && x >= 0 && x < map[0].length) {
+          if (!map[y][x].walkable) map[y][x] = createTile(TileType.Corridor, biome);
+        }
+        x += x < ex ? 1 : -1;
+      }
+      while (y !== ey) {
+        if (y >= 0 && y < map.length && x >= 0 && x < map[0].length) {
+          if (!map[y][x].walkable) map[y][x] = createTile(TileType.Corridor, biome);
+        }
+        y += y < ey ? 1 : -1;
+      }
+    }
+  }
+
   return {
     map,
     rooms,
@@ -393,5 +428,6 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
     bossArenaData: boss?.arenaData,
     themedRooms,
     steamVentTurns,
+    hiddenRooms,
   };
 }

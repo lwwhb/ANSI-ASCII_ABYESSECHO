@@ -6,7 +6,7 @@ import {
   createTile,
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
-  placeThemedRooms,
+  placeThemedRooms, verifyConnectivity, findNearestWalkable,
 } from './DungeonGenerator';
 
 function carveBridge(map: Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome, width: number): void {
@@ -171,7 +171,27 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
   }
   const { startRoom, stairsRoom } = pickStartAndStairs(islands, rng, width, height);
   const playerStart = { x: startRoom.centerX, y: startRoom.centerY };
+  // Ensure player start is on a floor tile (not lava)
+  if (map[playerStart.y]?.[playerStart.x]?.type !== TileType.Floor && map[playerStart.y]?.[playerStart.x]?.type !== TileType.Corridor) {
+    // Find any floor tile in the start island
+    for (let dy = 0; dy < startRoom.h && map[playerStart.y]?.[playerStart.x]?.type !== TileType.Floor; dy++) {
+      for (let dx = 0; dx < startRoom.w; dx++) {
+        const ty = startRoom.y + dy, tx = startRoom.x + dx;
+        if (map[ty]?.[tx]?.type === TileType.Floor) { playerStart.x = tx; playerStart.y = ty; break; }
+      }
+    }
+  }
   const stairsDown = { x: stairsRoom.centerX, y: stairsRoom.centerY };
+  // Ensure stairs position is on a floor tile (not lava)
+  if (map[stairsDown.y]?.[stairsDown.x]?.type !== TileType.Floor && map[stairsDown.y]?.[stairsDown.x]?.type !== TileType.Corridor) {
+    for (let dy = 0; dy < stairsRoom.h; dy++) {
+      for (let dx = 0; dx < stairsRoom.w; dx++) {
+        const ty = stairsRoom.y + dy, tx = stairsRoom.x + dx;
+        if (map[ty]?.[tx]?.type === TileType.Floor) { stairsDown.x = tx; stairsDown.y = ty; break; }
+      }
+      if (map[stairsDown.y]?.[stairsDown.x]?.type === TileType.Floor) break;
+    }
+  }
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
   const enemies = placeEnemies(islands, floor, rng, config.enemyIds);
@@ -206,7 +226,7 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
   }
 
   // Elite + special rooms + secret walls
-  const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, islands, floor, rng, config.enemyIds, biome);
+  const { eliteEnemy, eliteRoom, specialRooms, secretWalls, hiddenRooms } = placeEliteAndSpecialRooms(map, islands, floor, rng, config.enemyIds, biome);
 
   // Themed rooms (excluding start, boss, shop, event, elite rooms)
   const reservedRooms: Room[] = [startRoom];
@@ -227,6 +247,13 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
 
   const { themedRooms, steamVentTurns } = placeThemedRooms(map, islands, biome, rng, reservedRooms);
 
+  // Verify connectivity — if stairs unreachable, carve emergency bridge
+  if (!verifyConnectivity(map, playerStart, stairsDown)) {
+    const walkStart = findNearestWalkable(map, playerStart);
+    const walkStairs = findNearestWalkable(map, stairsDown);
+    carveBridge(map, walkStart.x, walkStart.y, walkStairs.x, walkStairs.y, biome, 2);
+  }
+
   return {
     map,
     rooms: islands,
@@ -243,5 +270,6 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
     bossArenaData: boss?.arenaData,
     themedRooms,
     steamVentTurns,
+    hiddenRooms,
   };
 }

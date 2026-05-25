@@ -3,10 +3,10 @@ import { SeededRandom } from '../utils/random';
 import { BIOME_CONFIG } from '../constants';
 import {
   DungeonData, Room,
-  createTile,
+  createTile, carveCorridor,
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
-  placeThemedRooms,
+  placeThemedRooms, verifyConnectivity, findNearestWalkable,
 } from './DungeonGenerator';
 
 interface Fragment {
@@ -118,6 +118,37 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
     }
   }
 
+  // 3b. Connect fragments with corridors carved through VoidWall (MST for guaranteed connectivity)
+  // This ensures walkable paths exist between all fragments, not just portals
+  if (fragments.length > 1) {
+    const connectedFrags = new Set<number>([0]);
+    while (connectedFrags.size < fragments.length) {
+      let bestDist = Infinity, bestFrom = -1, bestTo = -1;
+      for (const ci of connectedFrags) {
+        for (let j = 0; j < fragments.length; j++) {
+          if (connectedFrags.has(j)) continue;
+          const d = Math.abs(fragments[ci].centerX - fragments[j].centerX) +
+                    Math.abs(fragments[ci].centerY - fragments[j].centerY);
+          if (d < bestDist) { bestDist = d; bestFrom = ci; bestTo = j; }
+        }
+      }
+      if (bestTo === -1) break;
+      connectedFrags.add(bestTo);
+      // Carve corridor through void walls between fragment centers
+      carveCorridor(map, fragments[bestFrom].centerX, fragments[bestFrom].centerY,
+                    fragments[bestTo].centerX, fragments[bestTo].centerY, biome);
+    }
+    // Add 1-2 extra shortcut corridors for redundancy
+    for (let i = 0; i < Math.min(2, fragments.length - 1); i++) {
+      const a = rng.nextInt(0, fragments.length - 1);
+      const b = rng.nextInt(0, fragments.length - 1);
+      if (a !== b) {
+        carveCorridor(map, fragments[a].centerX, fragments[a].centerY,
+                       fragments[b].centerX, fragments[b].centerY, biome);
+      }
+    }
+  }
+
   // 4. Player start and stairs: randomly pick far-apart fragments
   const { startRoom: startFrag, stairsRoom: stairsFrag } = pickStartAndStairs(fragments, rng, width, height);
   const playerStart = { x: startFrag.centerX, y: startFrag.centerY };
@@ -188,7 +219,7 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
   }
 
   // Elite + special rooms + secret walls
-  const { eliteEnemy, eliteRoom, specialRooms, secretWalls } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
+  const { eliteEnemy, eliteRoom, specialRooms, secretWalls, hiddenRooms } = placeEliteAndSpecialRooms(map, rooms, floor, rng, config.enemyIds, biome);
 
   // Themed rooms (excluding start, boss, shop, event, elite rooms)
   const reservedRooms: Room[] = [startFrag];
@@ -209,6 +240,30 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
 
   const { themedRooms, steamVentTurns } = placeThemedRooms(map, rooms, biome, rng, reservedRooms);
 
+  // Verify connectivity — if stairs unreachable despite corridors, carve emergency path
+  if (!verifyConnectivity(map, playerStart, stairsDown)) {
+    const walkStart = findNearestWalkable(map, playerStart);
+    const walkStairs = findNearestWalkable(map, stairsDown);
+    carveCorridor(map, walkStart.x, walkStart.y, walkStairs.x, walkStairs.y, biome);
+    // Brute-force: carve every non-walkable tile on the path
+    if (!verifyConnectivity(map, playerStart, stairsDown)) {
+      let x = walkStart.x, y = walkStart.y;
+      const ex = walkStairs.x, ey = walkStairs.y;
+      while (x !== ex) {
+        if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && !map[y][x].walkable) {
+          map[y][x] = createTile(TileType.Corridor, biome);
+        }
+        x += x < ex ? 1 : -1;
+      }
+      while (y !== ey) {
+        if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && !map[y][x].walkable) {
+          map[y][x] = createTile(TileType.Corridor, biome);
+        }
+        y += y < ey ? 1 : -1;
+      }
+    }
+  }
+
   return {
     map,
     rooms,
@@ -222,6 +277,7 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
     eliteRoom,
     specialRooms,
     secretWalls,
+    hiddenRooms,
     bossArenaData: boss?.arenaData,
     themedRooms,
     steamVentTurns,

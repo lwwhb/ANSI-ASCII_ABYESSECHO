@@ -46,11 +46,41 @@ export enum TileType {
   Fountain = 'fountain',
   Inscription = 'inscription',
   SecretWall = 'secretWall',
+  HiddenFloor = 'hiddenFloor',
   Monument = 'monument',
   SpikeTrap = 'spikeTrap',       // 晶刺：站上去8伤害，对敌人也有效
   WeaponRack = 'weaponRack',     // 武器架：3选1免费武器
   Forge = 'forge',               // 锻造台：花金币强化装备
   SteamVent = 'steamVent',       // 蒸汽口：每3回合喷发遮挡视野
+  GoldPile = 'goldPile',               // 金币堆：拾取金币
+  MagicSpring = 'magicSpring',          // 魔法泉：全回复+buff
+  HiddenAltar = 'hiddenAltar',          // 隐藏祭坛：属性+1或遗物
+  LibraryShelf = 'libraryShelf',        // 书架：卷轴+天赋概率
+  VoidRiftRoom = 'voidRiftRoom',            // 虚空裂隙房间：专属遗物或传送
+  FungiPatch = 'fungiPatch',            // 真菌丛：中毒+蘑菇食物
+  HiddenSarcophagus = 'hiddenSarcophagus', // 古墓石棺：高品质物品+守卫
+}
+
+export enum HiddenRoomType {
+  Slaughterhouse = 'slaughterhouse',   // 屠宰场
+  Treasury = 'treasury',               // 藏宝室
+  Armory = 'armory',                    // 武器库
+  AlchemyLab = 'alchemyLab',           // 炼金室
+  MonsterNest = 'monsterNest',          // 怪物巢穴
+  AncientTomb = 'ancientTomb',          // 古墓室
+  MagicSpring = 'magicSpring',          // 魔法泉
+  HiddenAltar = 'hiddenAltar',          // 祭坛室
+  Library = 'library',                  // 图书馆
+  VoidRift = 'voidRiftRoom',           // 虚空裂隙
+  FungiPatch = 'fungiPatch',            // 真菌丛
+  Empty = 'empty',                      // 空洞
+}
+
+export interface HiddenRoomData {
+  type: HiddenRoomType;
+  positions: Position[];      // all HiddenFloor positions in this room
+  center: Position;           // center of room for feature placement
+  secretWallPos: Position;    // entrance SecretWall position
 }
 
 export interface Tile {
@@ -383,6 +413,9 @@ export enum RelicId {
   ChaosCore = 'chaosCore',
   EternalFlame = 'eternalFlame',
   FateWeaver = 'fateWeaver',
+  DarkVision = 'darkVision',          // 暗视之眼：视野+2
+  EchoHeart = 'echoHeart',            // 回响之心：进入隐藏房间全回复
+  AbyssWhisper = 'abyssWhisper',      // 深渊低语：每层首次进新房间揭示1个SecretWall
 }
 
 export enum RoomTheme {
@@ -402,7 +435,7 @@ export enum RoomTheme {
   SacrificeAltar = 'sacrificeAltar',
   SteamGeyser = 'steamGeyser',
   DragonNest = 'dragonNest',
-  VoidRift = 'voidRiftRoom',
+  VoidRift = 'voidRiftTheme',
   CorruptedSanctum = 'corruptedSanctum',
   ObserverEye = 'observerEye',
   VoidAltar = 'voidAltarRoom',
