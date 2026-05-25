@@ -130,6 +130,9 @@ export function processStatusEffects(
         messages.push(isPlayer ? '你头晕目眩，方向混乱！' : '目标陷入混乱！');
         skipped = true;
         break;
+      case StatusEffectType.Blind:
+        messages.push(isPlayer ? '你的视野一片漆黑！' : '');
+        break;
       case StatusEffectType.DefenseUp:
         messages.push(isPlayer ? '防御增强中...' : '');
         break;
@@ -152,6 +155,10 @@ export function isFrozen(entity: { statusEffects: StatusEffect[] }): boolean {
 
 export function isConfused(entity: { statusEffects: StatusEffect[] }): boolean {
   return entity.statusEffects.some(e => e.type === StatusEffectType.Confusion);
+}
+
+export function isBlind(entity: { statusEffects: StatusEffect[] }): boolean {
+  return entity.statusEffects.some(e => e.type === StatusEffectType.Blind);
 }
 
 // BUG FIX: Apply confusion to movement direction
@@ -321,6 +328,26 @@ export function getTrapEffect(trapType: string): { damage: number; statusEffect?
       };
     case 'teleport':
       return { damage: 0, message: '传送陷阱将你传送到了别处！' };
+    case 'paralysis':
+      return {
+        damage: 0,
+        statusEffect: { type: StatusEffectType.Freeze, duration: 3, damage: 0 },
+        message: '麻痹陷阱！你无法动弹！',
+      };
+    case 'confusion':
+      return {
+        damage: 0,
+        statusEffect: { type: StatusEffectType.Confusion, duration: 4, damage: 0 },
+        message: '混乱陷阱！你的方向感完全丧失！',
+      };
+    case 'blind':
+      return {
+        damage: 0,
+        statusEffect: { type: StatusEffectType.Blind, duration: 5, damage: 0 },
+        message: '致盲陷阱！你的视野陷入黑暗！',
+      };
+    case 'alarm':
+      return { damage: 0, message: '警报陷阱！刺耳的警声响彻地牢！' };
     default:
       return { damage: 0, message: '你触发了陷阱！' };
   }

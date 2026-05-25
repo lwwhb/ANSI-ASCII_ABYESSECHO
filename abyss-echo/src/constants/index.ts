@@ -87,6 +87,10 @@ export const TILE_CHARS: Record<TileType, { char: string; fg: string; bg: string
   [TileType.TrapFire]:     { char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
   [TileType.TrapTeleport]: { char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
   [TileType.TrapPoison]:   { char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
+  [TileType.TrapParalysis]:{ char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
+  [TileType.TrapConfusion]:{ char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
+  [TileType.TrapBlind]:    { char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
+  [TileType.TrapAlarm]:    { char: '·', fg: '#666677', bg: '#111122', walkable: true,  transparent: true },
   [TileType.Shop]:         { char: '$', fg: '#ffcc44', bg: '#111122', walkable: true,  transparent: true },
   [TileType.Event]:        { char: '♣', fg: '#aa44ff', bg: '#111122', walkable: true,  transparent: true },
   [TileType.ShallowWater]: { char: '≈', fg: '#5599dd', bg: '#112244', walkable: true,  transparent: true },
@@ -517,6 +521,7 @@ export const SCROLL_DEFS = [
   { name: '附魔卷轴',   unidentifiedName: '发光的纸卷',     char: '?', fg: '#ff88ff', effect: ScrollEffect.Enchant,    power: 1,  rarity: Rarity.Epic },
   { name: '解咒卷轴',   unidentifiedName: '陈旧的纸卷',     char: '?', fg: '#888844', effect: ScrollEffect.RemoveCurse, power: 1,  rarity: Rarity.Rare },
   { name: '传送门卷轴', unidentifiedName: '神秘符文纸卷',   char: '?', fg: '#cc44ff', effect: ScrollEffect.CreatePortal, power: 1,  rarity: Rarity.Epic },
+  { name: '感知卷轴',   unidentifiedName: '带有警告符号的纸卷', char: '?', fg: '#88ff88', effect: ScrollEffect.Detection,   power: 1,  rarity: Rarity.Common },
 ];
 
 export const FOOD_DEFS = [
@@ -568,12 +573,15 @@ export const TALENT_DEFS: TalentDef[] = [
   // Warrior-specific
   { id: 'shieldWall', name: 'Shield Wall', nameZh: '盾墙', description: '装备护甲时额外+3防御', icon: '🏰', classRequired: CharacterClass.Warrior },
   { id: 'bloodFury', name: 'Blood Fury', nameZh: '血之狂暴', description: 'HP越低攻击越高(最多+30%)', icon: '🩸', classRequired: CharacterClass.Warrior },
+  { id: 'ironWill', name: 'Iron Will', nameZh: '铁壁意志', description: '免疫混乱与麻痹效果', icon: '🧠', classRequired: CharacterClass.Warrior },
   // Mage-specific
   { id: 'spellPenetration', name: 'Spell Penetration', nameZh: '法术穿透', description: '魔法无视50%防御', icon: '🔮', classRequired: CharacterClass.Mage },
   { id: 'arcaneResonance', name: 'Arcane Resonance', nameZh: '奥术共鸣', description: '卷轴效果+30%', icon: '📖', classRequired: CharacterClass.Mage },
+  { id: 'manaShield', name: 'Mana Shield', nameZh: '法力护盾', description: '受到伤害时30%由MP承担', icon: '🔷', classRequired: CharacterClass.Mage },
   // Rogue-specific
   { id: 'evasionMaster', name: 'Evasion Master', nameZh: '闪避大师', description: '闪避率额外+10%', icon: '💨', classRequired: CharacterClass.Rogue },
   { id: 'toxicBlade', name: 'Toxic Blade', nameZh: '淬毒', description: '攻击20%概率附加中毒', icon: '☠', classRequired: CharacterClass.Rogue },
+  { id: 'trapSense', name: 'Trap Sense', nameZh: '陷阱感知', description: '视野内陷阱自动显形', icon: '👁', classRequired: CharacterClass.Rogue },
 ];
 
 // ============================================================

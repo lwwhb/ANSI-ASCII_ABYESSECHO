@@ -1,4 +1,4 @@
-export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear' | 'heartbeat' | 'stomachGrowl' | 'chainReaction' | 'relicAcquire' | 'enhanceSuccess' | 'enhanceFail' | 'bossPhase' | 'portalWarp' | 'bump' | 'ironDoor' | 'magicSpring' | 'voidRift';
+export type SfxId = 'attack' | 'hit' | 'critical' | 'levelup' | 'pickup' | 'door' | 'death' | 'skill' | 'coin' | 'trap' | 'heal' | 'bossAppear' | 'heartbeat' | 'stomachGrowl' | 'chainReaction' | 'relicAcquire' | 'enhanceSuccess' | 'enhanceFail' | 'bossPhase' | 'portalWarp' | 'bump' | 'ironDoor' | 'magicSpring' | 'voidRift' | 'paralyze' | 'confuse' | 'blind' | 'alarm';
 
 export interface SfxStage {
   freq: number;        // Start frequency in Hz
@@ -234,6 +234,46 @@ export const SFX_DEFS: SfxDef[] = [
     stages: [
       { freq: 60, wave: 'sawtooth', duration: 0.3, gain: 0.2 },
       { freq: 90, wave: 'sine', duration: 0.5, gain: 0.15, gainEnd: 0 },
+    ],
+  },
+
+  // paralyze: Electric buzz — sharp rise then sudden drop (square 200→600Hz + sawtooth 1200→200Hz decay)
+  {
+    id: 'paralyze',
+    stages: [
+      { freq: 200, freqEnd: 600, wave: 'square', duration: 0.06, gain: 0.3 },
+      { freq: 1200, freqEnd: 200, wave: 'sawtooth', duration: 0.15, gain: 0.25, gainEnd: 0 },
+    ],
+  },
+
+  // confuse: Dizzy wobble — back-and-forth tremolo (triangle 400→200→400→200Hz + sine 150Hz tail)
+  {
+    id: 'confuse',
+    stages: [
+      { freq: 400, freqEnd: 200, wave: 'triangle', duration: 0.06, gain: 0.25 },
+      { freq: 200, freqEnd: 400, wave: 'triangle', duration: 0.06, gain: 0.25 },
+      { freq: 400, freqEnd: 200, wave: 'triangle', duration: 0.06, gain: 0.25 },
+      { freq: 150, wave: 'sine', duration: 0.15, gain: 0.15, gainEnd: 0 },
+    ],
+  },
+
+  // blind: Darkness descends — long sinking tone (sine 500→100Hz + square 60Hz low drone)
+  {
+    id: 'blind',
+    stages: [
+      { freq: 500, freqEnd: 100, wave: 'sine', duration: 0.25, gain: 0.25 },
+      { freq: 60, wave: 'square', duration: 0.3, gain: 0.15, gainEnd: 0 },
+    ],
+  },
+
+  // alarm: Urgent alert — three rapid high pips + rising sweep (square 800Hz ×3 + sawtooth 200→600Hz)
+  {
+    id: 'alarm',
+    stages: [
+      { freq: 800, wave: 'square', duration: 0.04, gain: 0.3 },
+      { freq: 800, wave: 'square', duration: 0.04, gain: 0.3 },
+      { freq: 800, wave: 'square', duration: 0.04, gain: 0.3 },
+      { freq: 200, freqEnd: 600, wave: 'sawtooth', duration: 0.12, gain: 0.25, gainEnd: 0 },
     ],
   },
 ];

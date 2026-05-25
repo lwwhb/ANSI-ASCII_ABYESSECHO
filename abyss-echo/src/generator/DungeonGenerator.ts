@@ -800,7 +800,8 @@ export function addEnvironment(map: Tile[][], rooms: Room[], biome: Biome, rng: 
 
   for (const room of rooms) {
     if (rng.chance(config.trapChance * (1 + floor * 0.05))) {
-      const trapTypes = [TileType.TrapSpike, TileType.TrapFire, TileType.TrapTeleport, TileType.TrapPoison];
+      const trapTypes = [TileType.TrapSpike, TileType.TrapFire, TileType.TrapTeleport, TileType.TrapPoison,
+        TileType.TrapParalysis, TileType.TrapConfusion, TileType.TrapBlind, TileType.TrapAlarm];
       const trapType = rng.pick(trapTypes);
       const tx = rng.nextInt(room.x + 1, room.x + room.w - 2);
       const ty = rng.nextInt(room.y + 1, room.y + room.h - 2);

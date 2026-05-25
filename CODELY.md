@@ -2,7 +2,7 @@
 
 ## Overview
 
-This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.4**.
+This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.5**.
 
 ## Repository Structure
 
@@ -88,7 +88,7 @@ All commands run from `abyss-echo/`:
 ### Audio System
 - `AudioManager` singleton in `src/audio/AudioManager.ts` (~650 lines)
 - Step sequencer with lookahead scheduling (200ms ahead, 50ms interval)
-- 10 BGM tracks + 24 SFX defined in `musicData.ts` / `sfxData.ts`
+- 10 BGM tracks + 28 SFX defined in `musicData.ts` / `sfxData.ts`
 - Context-aware: auto-switches BGM based on floor biome, boss state, shop, game over
 - Features: crossfade (0.3s), boss overlay, SFX ducking (BGM volume drops during SFX)
 - Mute toggles synced to `GameState.musicEnabled` / `GameState.sfxEnabled`
@@ -107,7 +107,7 @@ All commands run from `abyss-echo/`:
 - `loadGame()` restores state, rebuilds FOV via `updateFOV()`, then **immediately deletes save** (anti save-scumming)
 - `deleteSave(reason)` called on: load, death (`handlePlayerDeath`), corruption (parse failure)
 - `suspendAndQuit()` — ESC key → confirm → save → return to title
-- Save data includes `version: "1.3.4"` field for future migration
+- Save data includes `version: "1.3.5"` field for future migration
 - `deathCause: string` in `GameState` — composed at death time, displayed on GameOverScreen; reset on restart/load
 - `GameState` fields are all JSON-serializable (no Maps/Sets/functions); `visibleTiles`/`rememberedMap` are in `GameStore` but not `GameState`, rebuilt on load
 
@@ -270,3 +270,29 @@ Output: terminal report + `simulation/simulation-report.txt` with HP/gold/equipm
 - LibraryShelf grants `statPoints` (not `talentPoints`) — 10% chance after collecting 2 scrolls
 - EchoHeart relic triggers on SecretWall walk-through (not room entry — heals during the same turn player passes through wall)
 - AbyssWhisper relic uses `(player as any)[revealedKey]` dynamic property for per-floor tracking (`revealedKey = _abyssWhisperF${floorNum}`), stores array of SecretWall positions revealed this floor
+
+### Trap System
+- 8 trap types: `TrapSpike`, `TrapFire`, `TrapPoison`, `TrapTeleport`, `TrapParalysis`, `TrapConfusion`, `TrapBlind`, `TrapAlarm`
+- All traps are hidden by default (display as `·` with `#666677`, identical to Floor)
+- Trap reveal: `Tile.trapRevealed?: boolean` — when true, trap displays `▲` with type-specific color
+- **trapSense talent** (Rogue): in `updateFOV()`, scans `visibleTiles` for trap types; reveals hidden traps by setting `trapRevealed=true`, updating char to `▲` with type color, and updating `rememberedMap`
+- **Detection scroll** (`ScrollEffect.Detection`): reveals ALL traps on current floor (not just visible); iterates entire map, sets `trapRevealed=true` and updates char/color for any unrevealed trap
+- Revealed traps are still triggerable — detection only makes them visible, does not disarm
+- **TrapParalysis**: applies `StatusEffectType.Freeze` for 3 turns (paralyze SFX)
+- **TrapConfusion**: applies `StatusEffectType.Confusion` for 4 turns (confuse SFX)
+- **TrapBlind**: applies `StatusEffectType.Blind` for 5 turns (blind SFX); immediately rebuilds FOV after applying
+- **TrapAlarm**: spawns 2 enemies near the trap using `BIOME_CONFIG[biome].enemyIds` + `createEnemy(defId, pos, false, floor)` (alarm SFX)
+- Trap colors when revealed: Spike `#aaaacc`, Fire `#ff8844`, Poison `#aa66ff`, Teleport `#44cc44`, Paralysis `#ccccff`, Confusion `#cccc44`, Blind `#666666`, Alarm `#ff4444`
+- Trap placement: `DungeonGenerator.ts` selects randomly from all 8 `TileType` trap variants
+
+### New Class Talents
+- **ironWill** (Warrior): immune to `Confusion` and `Freeze` status effects from both traps and potions; in trap trigger code, checks `hasIronWill` before applying Freeze/Confusion effects; in potion code, blocks Confusion/Freeze and shows "铁壁意志抵御了..." message
+- **manaShield** (Mage): `applyManaShield(player, damage)` helper absorbs 30% of incoming damage via MP; applied at 8 damage points (enemy melee, fireball, drain, breath, eldritch, surprise, voidRay, voidPulse); shows MP absorbed message and floating blue text
+- **trapSense** (Rogue): see Trap System above
+
+### Blind Status Effect
+- `StatusEffectType.Blind` in `types/index.ts`; duration typically 5 turns
+- `isBlind()` helper in `Combat.ts` checks for Blind status
+- In `processStatusEffects`, Blind only generates message (no skip turn, no damage)
+- Vision reduction: `getTalentModifiedVisionRadius()` returns 1 when Blind status active
+- FOV rebuilds automatically on next `updateFOV()` call after Blind expires

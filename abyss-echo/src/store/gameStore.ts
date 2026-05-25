@@ -276,7 +276,18 @@ function getTalentModifiedElementalDamage(player: Player, baseDamage: number): n
 function getTalentModifiedVisionRadius(player: Player): number {
   let radius = hasTalent(player, 'nightVision') ? player.visionRadius + 2 : player.visionRadius;
   if (player.relics.includes(RelicId.DarkVision)) radius += 2;
+  // Blind status: vision reduced to 1
+  if (player.statusEffects.some(e => e.type === StatusEffectType.Blind)) radius = 1;
   return radius;
+}
+
+// Mana Shield: absorb 30% of damage via MP
+function applyManaShield(player: Player, damage: number): { hpDamage: number; mpAbsorbed: number } {
+  if (!player.talents.includes('manaShield') || damage <= 0) {
+    return { hpDamage: damage, mpAbsorbed: 0 };
+  }
+  const mpAbsorbed = Math.min(player.mp, Math.floor(damage * 0.3));
+  return { hpDamage: damage - mpAbsorbed, mpAbsorbed };
 }
 
 function getTalentModifiedTenaciousDefense(player: Player): number {
@@ -464,6 +475,40 @@ export const useGameStore = create<GameStore>((set, get) => {
             newMap[y][x].rememberedBg = r.bg;
           }
         }
+      }
+    }
+
+    // Trap Sense talent: reveal traps in visible area
+    if (state.player.talents.includes('trapSense')) {
+      const TRAP_REVEAL: Record<string, { char: string; fg: string }> = {
+        [TileType.TrapSpike]: { char: '▲', fg: '#aaaacc' },
+        [TileType.TrapFire]: { char: '▲', fg: '#ff8844' },
+        [TileType.TrapTeleport]: { char: '▲', fg: '#aa66ff' },
+        [TileType.TrapPoison]: { char: '▲', fg: '#44cc44' },
+        [TileType.TrapParalysis]: { char: '▲', fg: '#ccccff' },
+        [TileType.TrapConfusion]: { char: '▲', fg: '#cccc44' },
+        [TileType.TrapBlind]: { char: '▲', fg: '#666666' },
+        [TileType.TrapAlarm]: { char: '▲', fg: '#ff4444' },
+      };
+      let trapRevealed = false;
+      const trapMap = newMap.map(row => row.map(tile => ({ ...tile })));
+      for (let y = 0; y < state.height; y++) {
+        for (let x = 0; x < state.width; x++) {
+          const key = `${x},${y}`;
+          if (visible.has(key) && !trapMap[y][x].trapRevealed) {
+            const reveal = TRAP_REVEAL[trapMap[y][x].type];
+            if (reveal) {
+              trapMap[y][x].char = reveal.char;
+              trapMap[y][x].fg = reveal.fg;
+              trapMap[y][x].trapRevealed = true;
+              remembered.set(key, { char: reveal.char, fg: reveal.fg, bg: trapMap[y][x].bg });
+              trapRevealed = true;
+            }
+          }
+        }
+      }
+      if (trapRevealed) {
+        set({ map: trapMap, rememberedMap: remembered });
       }
     }
 
@@ -1127,6 +1172,15 @@ export const useGameStore = create<GameStore>((set, get) => {
               AudioManager.playSFX('hit');
               flashScreen('#ff000033');
 
+              // Mana Shield: 30% of damage absorbed by MP
+              const shield = applyManaShield(player, damage);
+              if (shield.mpAbsorbed > 0) {
+                player.mp -= shield.mpAbsorbed;
+                player.hp += shield.mpAbsorbed;
+                addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
+                messages.push(msg(`法力护盾吸收了${shield.mpAbsorbed}点伤害！`, MessageCategory.Combat, '#4488ff'));
+              }
+
               // Add floating text for player damage
               addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff4444', 'damage');
 
@@ -1249,6 +1303,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         const def = ACHIEVEMENT_DEFS.find(a => a.id === id);
         if (def) {
           messages.push(msg(`🏆 成就解锁：${def.nameZh}！`, MessageCategory.System, '#ffcc44'));
+          AudioManager.playSFX('levelup');
         }
       }
       set({ achievements: allAchievements });
@@ -1330,20 +1385,26 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'fireball': {
         let damage = Math.floor(enemy.attack * 1.5);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
-        player.hp -= damage;
+        const shield = applyManaShield(player, damage);
+        player.hp -= shield.hpDamage;
+        player.mp -= shield.mpAbsorbed;
         addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff6600', 'damage');
-        messages.push(msg(`${enemy.name}释放了火球术！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#ff6644'));
+        if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
+        messages.push(msg(`${enemy.name}释放了火球术！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#ff6644'));
         break;
       }
       case 'drain': {
         const damage = Math.floor(enemy.attack * 0.8);
-        player.hp -= damage;
+        const shield = applyManaShield(player, damage);
+        player.hp -= shield.hpDamage;
+        player.mp -= shield.mpAbsorbed;
         addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#aa44ff', 'damage');
+        if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
         const eidx = enemies.findIndex(e => e.id === enemy.id);
         if (eidx >= 0) {
           enemies[eidx] = { ...enemies[eidx], hp: Math.min(enemies[eidx].maxHp, enemies[eidx].hp + Math.floor(damage / 2)) };
         }
-        messages.push(msg(`${enemy.name}吸取了你的生命力！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#aa44ff'));
+        messages.push(msg(`${enemy.name}吸取了你的生命力！造成 ${damage} 点伤害！${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#aa44ff'));
         break;
       }
       case 'poison': {
@@ -1385,9 +1446,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'breath': {
         let damage = Math.floor(enemy.attack * 1.8);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
-        player.hp -= damage;
+        const shield = applyManaShield(player, damage);
+        player.hp -= shield.hpDamage;
+        player.mp -= shield.mpAbsorbed;
         addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff6600', 'damage');
-        messages.push(msg(`${enemy.name}喷出了龙息！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#ff4422'));
+        if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
+        messages.push(msg(`${enemy.name}喷出了龙息！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#ff4422'));
         break;
       }
       case 'teleport': {
@@ -1404,21 +1468,27 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'eldritch': {
         let damage = Math.floor(enemy.attack * 1.5);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
-        player.hp -= damage;
+        const shield = applyManaShield(player, damage);
+        player.hp -= shield.hpDamage;
+        player.mp -= shield.mpAbsorbed;
         addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#cc44ff', 'damage');
+        if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
         if (rng.chance(0.4)) {
           player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Poison, duration: 5, damage: 4 }];
-          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！你中毒了！(☠4伤害/5回合)${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#cc44ff'));
+          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！你中毒了！(☠4伤害/5回合)${hasElementResist ? '(抗性减免)' : ''}${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#cc44ff'));
         } else {
-          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#cc44ff'));
+          messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！${hasElementResist ? '(抗性减免)' : ''}${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#cc44ff'));
         }
         break;
       }
       case 'surprise': {
         const damage = Math.floor(enemy.attack * 2);
-        player.hp -= damage;
+        const shield = applyManaShield(player, damage);
+        player.hp -= shield.hpDamage;
+        player.mp -= shield.mpAbsorbed;
         addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff4444', 'crit');
-        messages.push(msg(`${enemy.name}突然袭击！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
+        if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
+        messages.push(msg(`${enemy.name}突然袭击！造成 ${damage} 点伤害！${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#ff4444'));
         break;
       }
       case 'regenerate': {
@@ -1663,9 +1733,12 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'voidRay': {
         let damage = Math.floor(enemy.attack * 1.8);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
-        player.hp -= damage;
+        const shield = applyManaShield(player, damage);
+        player.hp -= shield.hpDamage;
+        player.mp -= shield.mpAbsorbed;
         addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#cc44ff', 'damage');
-        messages.push(msg(`${enemy.name}发射虚空射线！造成${damage}点伤害！`, MessageCategory.Combat, '#cc44ff'));
+        if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
+        messages.push(msg(`${enemy.name}发射虚空射线！造成${damage}点伤害！${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#cc44ff'));
         break;
       }
       case 'devourMinion': {
@@ -1690,15 +1763,18 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'voidPulse': {
         const vampRate = enemy.bossPhase >= 3 ? 0.8 : 0.6;
         const dmg = Math.floor(enemy.attack * 1.0);
-        player.hp -= dmg;
+        const shield = applyManaShield(player, dmg);
+        player.hp -= shield.hpDamage;
+        player.mp -= shield.mpAbsorbed;
         addFloatingText(player.pos.x, player.pos.y, `-${dmg}`, '#cc44ff', 'damage');
+        if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
         const healAmt = Math.floor(dmg * vampRate);
         const bossIdx = enemies.findIndex(e => e.id === enemy.id);
         if (bossIdx >= 0) {
           enemies[bossIdx] = { ...enemy, hp: Math.min(enemy.maxHp, enemy.hp + healAmt) };
           addFloatingText(enemy.pos.x, enemy.pos.y, `+${healAmt}`, '#44cc44', 'heal');
         }
-        messages.push(msg(`${enemy.name}释放虚空脉冲！造成${dmg}点伤害并回复${healAmt}HP！`, MessageCategory.Combat, '#cc44ff'));
+        messages.push(msg(`${enemy.name}释放虚空脉冲！造成${dmg}点伤害并回复${healAmt}HP！${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#cc44ff'));
         break;
       }
       case 'corrodeAll': {
@@ -2904,24 +2980,52 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       // Check for trap
       if (tile.type === TileType.TrapSpike || tile.type === TileType.TrapFire ||
-          tile.type === TileType.TrapTeleport || tile.type === TileType.TrapPoison) {
+          tile.type === TileType.TrapTeleport || tile.type === TileType.TrapPoison ||
+          tile.type === TileType.TrapParalysis || tile.type === TileType.TrapConfusion ||
+          tile.type === TileType.TrapBlind || tile.type === TileType.TrapAlarm) {
         const typeMap: Record<string, string> = {
           [TileType.TrapSpike]: 'spike',
           [TileType.TrapFire]: 'fire',
           [TileType.TrapTeleport]: 'teleport',
           [TileType.TrapPoison]: 'poison',
+          [TileType.TrapParalysis]: 'paralysis',
+          [TileType.TrapConfusion]: 'confusion',
+          [TileType.TrapBlind]: 'blind',
+          [TileType.TrapAlarm]: 'alarm',
         };
         const trapEffect = getTrapEffect(typeMap[tile.type] || 'spike');
         const hasFireResist = tile.type === TileType.TrapFire && player.statusEffects.some(e => e.type === StatusEffectType.FireResist);
         const trapDmg = hasFireResist ? Math.floor(trapEffect.damage / 3) : trapEffect.damage;
+
+        // Iron Will: immune to paralysis and confusion trap effects
+        const hasIronWill = player.talents.includes('ironWill');
+
         player.hp -= trapDmg;
-        addFloatingText(player.pos.x, player.pos.y, `-${trapDmg}`, '#ff4444', 'damage');
+        if (trapDmg > 0) addFloatingText(player.pos.x, player.pos.y, `-${trapDmg}`, '#ff4444', 'damage');
         if (trapEffect.statusEffect) {
-          player.statusEffects = [...player.statusEffects, trapEffect.statusEffect];
+          // Iron Will blocks Freeze (paralysis) and Confusion from traps
+          if (hasIronWill && (trapEffect.statusEffect.type === StatusEffectType.Freeze ||
+                              trapEffect.statusEffect.type === StatusEffectType.Confusion)) {
+            addMessages([msg('铁壁意志抵御了陷阱效果！', MessageCategory.System, '#ffcc44')]);
+          } else {
+            player.statusEffects = [...player.statusEffects, trapEffect.statusEffect];
+          }
         }
         addMessages([msg(trapEffect.message, MessageCategory.Environment, '#ff4444')]);
         flashScreen('#ff000033');
-        AudioManager.playSFX('trap');
+
+        // Play type-specific SFX
+        if (tile.type === TileType.TrapParalysis) {
+          AudioManager.playSFX('paralyze');
+        } else if (tile.type === TileType.TrapConfusion) {
+          AudioManager.playSFX('confuse');
+        } else if (tile.type === TileType.TrapBlind) {
+          AudioManager.playSFX('blind');
+        } else if (tile.type === TileType.TrapAlarm) {
+          AudioManager.playSFX('alarm');
+        } else {
+          AudioManager.playSFX('trap');
+        }
 
         // BUG FIX: Teleport trap finds valid walkable position
         if (tile.type === TileType.TrapTeleport) {
@@ -2938,7 +3042,42 @@ export const useGameStore = create<GameStore>((set, get) => {
           }
         }
 
-        set({ player });
+        // Alarm trap: spawn 2 enemies nearby
+        if (tile.type === TileType.TrapAlarm) {
+          const rng2 = new SeededRandom(state.seed + state.turn * 7);
+          const biome = getBiomeForFloor(state.currentFloor);
+          const config = BIOME_CONFIG[biome];
+          const enemyPool = config.enemyIds;
+          if (enemyPool.length > 0) {
+            const spawned: Enemy[] = [];
+            for (let i = 0; i < 2; i++) {
+              const defId = rng2.pick(enemyPool);
+              const dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1},{dx:1,dy:1},{dx:-1,dy:-1},{dx:1,dy:-1},{dx:-1,dy:1}];
+              const shuffled = dirs.sort(() => rng2.next() - 0.5);
+              for (const d of shuffled) {
+                const nx = player.pos.x + d.dx;
+                const ny = player.pos.y + d.dy;
+                if (nx >= 0 && nx < state.width && ny >= 0 && ny < state.height && state.map[ny]?.[nx]?.walkable) {
+                  const enemy = createEnemy(defId, { x: nx, y: ny }, false, state.currentFloor);
+                  if (enemy) { spawned.push(enemy); break; }
+                }
+              }
+            }
+            if (spawned.length > 0) {
+              const newEnemies = [...state.enemies, ...spawned];
+              set({ enemies: newEnemies });
+              addMessages([msg(`警报吸引了${spawned.length}个敌人！`, MessageCategory.Combat, '#ff4444')]);
+            }
+          }
+        }
+
+        // Blind trap: rebuild FOV immediately
+        if (tile.type === TileType.TrapBlind && !hasIronWill) {
+          set({ player });
+          updateFOV();
+        } else {
+          set({ player });
+        }
       }
 
       // Poison gas tile
@@ -3006,6 +3145,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#335577', bg: 'transparent', walkable: true, transparent: true };
         set({ map: newMap, player });
         addMessages([msg('治愈泉的泉水恢复了你的力量！', MessageCategory.Item, '#44aaff')]);
+        AudioManager.playSFX('magicSpring');
       }
 
       // Inscription: Read lore + permanent buff
@@ -3068,6 +3208,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             ? '虚空锻造台：费用减半，但有10%概率被诅咒！'
             : '你可以在这里强化装备。费用根据强化等级而定。';
           addMessages([msg(forgeMsg, MessageCategory.System, '#ffcc44')]);
+          AudioManager.playSFX('ironDoor');
         } else {
           addMessages([msg('你没有可强化的装备。', MessageCategory.System, '#888888')]);
         }
@@ -3084,6 +3225,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           newMap[ny][nx] = createTile(TileType.Floor, biome);
           set({ items: [...state.items, floorItem], map: newMap });
           addMessages([msg(`武器架上有一件${getItemName(newWeapon)}！`, MessageCategory.Item, '#ffcc44')]);
+          AudioManager.playSFX('pickup');
         } else {
           // Fallback: create a basic weapon
           const basicWeapon: WeaponItem = {
@@ -3302,14 +3444,22 @@ export const useGameStore = create<GameStore>((set, get) => {
               AudioManager.playSFX('trap');
               break;
             case PotionEffect.Paralysis:
-              player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Freeze, duration: potion.power, damage: 0 }];
-              messages.push(msg('你被麻痹了！', MessageCategory.Item, '#ff4444'));
-              AudioManager.playSFX('trap');
+              if (player.talents.includes('ironWill')) {
+                messages.push(msg('铁壁意志抵御了麻痹效果！', MessageCategory.System, '#ffcc44'));
+              } else {
+                player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Freeze, duration: potion.power, damage: 0 }];
+                messages.push(msg('你被麻痹了！', MessageCategory.Item, '#ff4444'));
+                AudioManager.playSFX('trap');
+              }
               break;
             case PotionEffect.Confusion:
-              player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Confusion, duration: potion.power, damage: 0 }];
-              messages.push(msg('你感到头晕目眩，方向感全无！', MessageCategory.Item, '#cccc44'));
-              AudioManager.playSFX('trap');
+              if (player.talents.includes('ironWill')) {
+                messages.push(msg('铁壁意志抵御了混乱效果！', MessageCategory.System, '#ffcc44'));
+              } else {
+                player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Confusion, duration: potion.power, damage: 0 }];
+                messages.push(msg('你感到头晕目眩，方向感全无！', MessageCategory.Item, '#cccc44'));
+                AudioManager.playSFX('trap');
+              }
               break;
             case PotionEffect.FullHeal:
               const healed = player.maxHp - player.hp;
@@ -3501,6 +3651,42 @@ export const useGameStore = create<GameStore>((set, get) => {
               messages.push(msg('脚下出现了传送门！', MessageCategory.Item, '#cc44ff'));
               break;
             }
+            case ScrollEffect.Detection: {
+              // Reveal all traps on current floor
+              const TRAP_REVEAL: Record<string, { char: string; fg: string }> = {
+                [TileType.TrapSpike]: { char: '▲', fg: '#aaaacc' },
+                [TileType.TrapFire]: { char: '▲', fg: '#ff8844' },
+                [TileType.TrapTeleport]: { char: '▲', fg: '#aa66ff' },
+                [TileType.TrapPoison]: { char: '▲', fg: '#44cc44' },
+                [TileType.TrapParalysis]: { char: '▲', fg: '#ccccff' },
+                [TileType.TrapConfusion]: { char: '▲', fg: '#cccc44' },
+                [TileType.TrapBlind]: { char: '▲', fg: '#666666' },
+                [TileType.TrapAlarm]: { char: '▲', fg: '#ff4444' },
+              };
+              const newMap = state.map.map(row => row.map(t => ({ ...t })));
+              const remembered = new Map(get().rememberedMap);
+              let trapCount = 0;
+              for (let y = 0; y < state.height; y++) {
+                for (let x = 0; x < state.width; x++) {
+                  const reveal = TRAP_REVEAL[newMap[y][x].type];
+                  if (reveal && !newMap[y][x].trapRevealed) {
+                    newMap[y][x].char = reveal.char;
+                    newMap[y][x].fg = reveal.fg;
+                    newMap[y][x].trapRevealed = true;
+                    remembered.set(`${x},${y}`, { char: reveal.char, fg: reveal.fg, bg: newMap[y][x].bg });
+                    trapCount++;
+                  }
+                }
+              }
+              set({ map: newMap, rememberedMap: remembered });
+              if (trapCount > 0) {
+                messages.push(msg(`感知卷轴揭示了${trapCount}个隐藏陷阱！`, MessageCategory.Item, '#88ff88'));
+              } else {
+                messages.push(msg('感知卷轴没有发现任何陷阱。', MessageCategory.Item, '#88ff88'));
+              }
+              AudioManager.playSFX('magicSpring');
+              break;
+            }
           }
 
           player.inventory = player.inventory.filter((_, i) => i !== index);
@@ -3566,6 +3752,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       set({ player, items });
       addMessages([msg(`你丢弃了${getItemName(item)}`, MessageCategory.Item, '#888888')]);
+      AudioManager.playSFX('bump');
     },
 
     sellItem: (index: number) => {
@@ -3598,6 +3785,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       const nextFloor = state.currentFloor + 1;
       addMessages([msg(`你沿着楼梯向下深入...`, MessageCategory.Story, '#ffcc44')]);
+      AudioManager.playSFX('portalWarp');
       enterFloor(nextFloor);
     },
 
@@ -3698,6 +3886,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       const identified = identifyItem(item);
       player.inventory = player.inventory.map(i => i.id === identified.id ? identified : i);
       addMessages([msg(`你鉴定了${identified.name}！`, MessageCategory.Item, '#ffcc44')]);
+      AudioManager.playSFX('relicAcquire');
       set({ player, pendingIdentify: false, phase: GamePhase.Playing });
     },
 
@@ -3715,6 +3904,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       player.inventory = player.inventory.filter(i => i.id !== item.id);
       player.bonusStats = { ...player.bonusStats, vit: player.bonusStats.vit + 1 };
       addMessages([msg(`献祭了${getItemName(item)}！活力永久+1！`, MessageCategory.Item, '#ffcc44')]);
+      AudioManager.playSFX('relicAcquire');
       set({ player, pendingSacrifice: false, phase: GamePhase.Playing });
     },
 
@@ -3726,6 +3916,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         return;
       }
       set({ phase: GamePhase.Playing, pendingAllocations: { str: 0, dex: 0, int: 0, vit: 0 } });
+      AudioManager.playSFX('levelup');
     },
 
     selectTalent: (talentId: string) => {
@@ -3745,6 +3936,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       set({ player, phase: GamePhase.LevelUp });
       const talent = TALENT_DEFS.find(t => t.id === talentId);
       addMessages([msg(`获得天赋：${talent?.nameZh ?? talentId}！`, MessageCategory.System, '#ffcc44')]);
+      AudioManager.playSFX('relicAcquire');
     },
 
     useSkill: (skillIndex: number) => {
@@ -4671,6 +4863,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       set({ player, currentEvent: null, phase: GamePhase.Playing });
       addMessages(messages);
+      AudioManager.playSFX('relicAcquire');
     },
 
     closeEvent: () => {
@@ -4697,6 +4890,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
 
       addMessages([msg('获得了Boss祝福！', MessageCategory.System, '#ffd700')]);
+      AudioManager.playSFX('relicAcquire');
       set({ player, bossBlessingPending, lastBossDefId });
       updateFOV();
     },

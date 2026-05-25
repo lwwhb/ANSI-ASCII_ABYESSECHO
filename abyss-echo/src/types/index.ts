@@ -23,6 +23,10 @@ export enum TileType {
   TrapFire = 'trapFire',
   TrapTeleport = 'trapTeleport',
   TrapPoison = 'trapPoison',
+  TrapParalysis = 'trapParalysis',
+  TrapConfusion = 'trapConfusion',
+  TrapBlind = 'trapBlind',
+  TrapAlarm = 'trapAlarm',
   Shop = 'shop',
   Event = 'event',
   ShallowWater = 'shallowWater',
@@ -95,6 +99,7 @@ export interface Tile {
   rememberedChar?: string;
   rememberedFg?: string;
   rememberedBg?: string;
+  trapRevealed?: boolean;
 }
 
 // --- Biomes ---
@@ -166,6 +171,7 @@ export enum StatusEffectType {
   DefenseUp = 'defenseUp',
   PoisonBlade = 'poisonBlade',
   FireResist = 'fireResist',
+  Blind = 'blind',
 }
 
 export interface StatusEffect {
@@ -283,6 +289,7 @@ export enum ScrollEffect {
   Enchant = 'enchant',
   RemoveCurse = 'removeCurse',
   CreatePortal = 'createPortal',
+  Detection = 'detection',
 }
 
 // --- Skill System ---
