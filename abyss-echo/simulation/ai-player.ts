@@ -146,7 +146,7 @@ function isCombatScroll(item: Item): boolean {
 
 function isUtilityScroll(item: Item): boolean {
   return item.type === ItemType.Scroll && item.identified &&
-    (item.name?.includes('鉴定') || item.name?.includes('地图') || item.name?.includes('附魔') || item.name?.includes('解咒') || item.name?.includes('传送门'));
+    (item.name?.includes('鉴定') || item.name?.includes('地图') || item.name?.includes('附魔') || item.name?.includes('解咒') || item.name?.includes('传送门') || item.name?.includes('感知'));
 }
 
 // ============================================================
@@ -154,9 +154,9 @@ function isUtilityScroll(item: Item): boolean {
 // ============================================================
 
 const TALENT_PRIORITIES: Record<string, string[]> = {
-  warrior: ['nightVision', 'thickSkin', 'ironStomach', 'regeneration', 'deadlyStrike', 'shieldWall', 'bloodFury', 'fastLearner', 'lucky', 'tenacious', 'packMule', 'elementalAffinity', 'greedy', 'meditation'],
-  mage: ['nightVision', 'meditation', 'spellPenetration', 'arcaneResonance', 'fastLearner', 'ironStomach', 'lucky', 'elementalAffinity', 'thickSkin', 'regeneration', 'deadlyStrike', 'tenacious', 'packMule', 'greedy'],
-  rogue: ['ironStomach', 'nightVision', 'deadlyStrike', 'evasionMaster', 'lucky', 'toxicBlade', 'fastLearner', 'regeneration', 'thickSkin', 'tenacious', 'packMule', 'elementalAffinity', 'greedy', 'meditation'],
+  warrior: ['nightVision', 'thickSkin', 'ironStomach', 'regeneration', 'deadlyStrike', 'shieldWall', 'ironWill', 'bloodFury', 'fastLearner', 'lucky', 'tenacious', 'packMule', 'elementalAffinity', 'greedy', 'meditation'],
+  mage: ['nightVision', 'meditation', 'spellPenetration', 'manaShield', 'arcaneResonance', 'fastLearner', 'ironStomach', 'lucky', 'elementalAffinity', 'thickSkin', 'regeneration', 'deadlyStrike', 'tenacious', 'packMule', 'greedy'],
+  rogue: ['ironStomach', 'nightVision', 'trapSense', 'deadlyStrike', 'evasionMaster', 'lucky', 'toxicBlade', 'fastLearner', 'regeneration', 'thickSkin', 'tenacious', 'packMule', 'elementalAffinity', 'greedy', 'meditation'],
 };
 
 // ============================================================
@@ -845,7 +845,7 @@ export function decideAction(
     for (const t of priorities) {
       if (!talents.includes(t)) return { type: 'selectTalent', talentId: t };
     }
-    const allTalents = ['nightVision', 'thickSkin', 'ironStomach', 'fastLearner', 'lucky', 'regeneration', 'greedy', 'tenacious', 'deadlyStrike', 'elementalAffinity', 'packMule', 'meditation', 'shieldWall', 'bloodFury', 'spellPenetration', 'arcaneResonance', 'evasionMaster', 'toxicBlade'];
+    const allTalents = ['nightVision', 'thickSkin', 'ironStomach', 'fastLearner', 'lucky', 'regeneration', 'greedy', 'tenacious', 'deadlyStrike', 'elementalAffinity', 'packMule', 'meditation', 'shieldWall', 'bloodFury', 'ironWill', 'spellPenetration', 'arcaneResonance', 'manaShield', 'evasionMaster', 'toxicBlade', 'trapSense'];
     for (const t of allTalents) {
       if (!talents.includes(t)) return { type: 'selectTalent', talentId: t };
     }
@@ -1122,10 +1122,10 @@ export function decideAction(
         const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
         if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
       }
-      // Mage: IceShield before engaging (if no DefenseUp active)
+      // Mage: IceShield before engaging (if no DefenseUp active) — only if enemies are close enough to threaten
       if (player.class === CharacterClass.Mage && skillCooldowns[1] <= 0 && player.mp >= 6) {
         const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
-        if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
+        if (!hasDefUp && visibleEnemies5.length > 0) return { type: 'useSkill', itemIndex: 1 };
       }
       // Rogue: PoisonBlade before engaging
       if (player.class === CharacterClass.Rogue && skillCooldowns[1] <= 0 && player.mp >= 4) {
@@ -1162,6 +1162,7 @@ export function decideAction(
       const mpRatio = player.mp / Math.max(1, player.maxMp);
       const hpRatio = player.hp / Math.max(1, player.maxHp);
       const meleeDamage = Math.floor((player.stats?.str ?? 3) * 0.5) + ((player.equipment[EquipmentSlot.Weapon] as any)?.damage ?? 0);
+      const noSkillsAvailable = (skillCooldowns[0] > 0 || player.mp < 7) && (skillCooldowns[1] > 0 || player.mp < 6) && (skillCooldowns[2] > 0 || player.mp < 10);
 
       // Adjacent enemy: decide between kiting, fighting, or fleeing
       if (adjEnemy) {
@@ -1187,8 +1188,15 @@ export function decideAction(
           return { type: 'move', dx: adjEnemy.pos.x - px, dy: adjEnemy.pos.y - py };
         }
 
-        // Kite when possible and HP moderate
-        if (canKite && hpRatio > 0.5) {
+        // Low MP or no skills: commit to melee instead of kiting forever
+        if (mpRatio < 0.3 || noSkillsAvailable) {
+          const healIdx = findHealingPotion(player);
+          if (healIdx >= 0 && hpRatio < 0.5) return { type: 'useItem', itemIndex: healIdx };
+          return { type: 'move', dx: adjEnemy.pos.x - px, dy: adjEnemy.pos.y - py };
+        }
+
+        // Kite when possible and HP moderate — but NOT if stuck in a ping-pong loop
+        if (canKite && hpRatio > 0.5 && !stuckInLoop) {
           const retreatDir = getRetreatDirection(player, enemies, isWalkable, w, h);
           if (retreatDir) return retreatDir;
         }
@@ -1242,6 +1250,15 @@ export function decideAction(
         const manaIdx = findManaPotion(player);
         if (manaIdx >= 0) return { type: 'useItem', itemIndex: manaIdx };
       }
+
+      // No ranged skills available and no adjacent enemy: move toward nearest enemy for melee
+      if (noSkillsAvailable && visibleEnemies5.length > 0) {
+        const target = findNearestVisibleEnemy(player, enemies, visibleTiles, 8);
+        if (target) {
+          const path = bfsToTarget(px, py, target.pos.x, target.pos.y, isWalkableForBFS, w, h, map);
+          if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+        }
+      }
     }
 
     // ---- 3e. ROGUE: ShadowStep for gap-closing ----
@@ -1250,7 +1267,12 @@ export function decideAction(
       if (visibleEnemies8.length >= 1 && skillCooldowns[0] <= 0 && player.mp >= 6 && !adjEnemy) {
         const bossVisible8 = visibleEnemies8.some(e => e.isBoss);
         const healthyEnough = player.hp > player.maxHp * 0.6;
-        if (bossVisible8 || healthyEnough) {
+        // Only ShadowStep if enemies are close enough (within 4 tiles) — don't waste on distant enemies
+        const closeEnemy = visibleEnemies8.find(e => {
+          const d = Math.abs(e.pos.x - px) + Math.abs(e.pos.y - py);
+          return d <= 4;
+        });
+        if ((bossVisible8 || healthyEnough) && closeEnemy) {
           return { type: 'useSkill', itemIndex: 0 };
         }
       }
@@ -1360,11 +1382,18 @@ export function decideAction(
     if (mapIdx >= 0) return { type: 'useItem', itemIndex: mapIdx };
   }
 
+  // 5g. Use Detection scroll early on floor (reveals all traps)
+  if (turnOnFloor < 15) {
+    const detectIdx = player.inventory.findIndex(i => i.type === ItemType.Scroll && i.identified && i.name?.includes('感知'));
+    if (detectIdx >= 0) return { type: 'useItem', itemIndex: detectIdx };
+  }
+
   // ---- 6. NAVIGATION ----
 
   // 6a. Open adjacent doors (always, even during exploration/combat)
+  // But don't spam openDoor if we're stuck in a loop (door might be blocked)
   const doorDir = findAdjacentDoor(px, py, map, w, h);
-  if (doorDir) return { type: 'openDoor', dx: doorDir.dx, dy: doorDir.dy };
+  if (doorDir && !stuckInLoop) return { type: 'openDoor', dx: doorDir.dx, dy: doorDir.dy };
 
   // 6b. Descend stairs if on them
   const currentTile = map[py]?.[px];
@@ -1396,8 +1425,8 @@ export function decideAction(
 
   // 6c. Move toward stairs if appropriate
   // On boss floors, skip stairs-seeking until turnOnFloor > 120 (explore for boss first)
-  const stairsSeekThreshold = onBossFloor ? 120 : 60;
-  if (turnOnFloor > 10 && (turnOnFloor > stairsSeekThreshold || lowHungerNoFood)) {
+  const stairsSeekThreshold = onBossFloor ? 120 : 30;
+  if (turnOnFloor > 5 && (turnOnFloor > stairsSeekThreshold || lowHungerNoFood)) {
     const stairsPath = findNearestTile(
       px, py,
       (x, y) => map[y]?.[x]?.type === ('stairsDown' as TileType),
@@ -1497,9 +1526,47 @@ export function decideAction(
     }
   }
 
-  // 6i. Fallback: non-repeating random walk (FIXED: avoid spinning)
-  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-  const shuffled = [...dirs].sort(() => rng.next() - 0.5);
+  // 6i. Fallback: BFS to least-visited walkable tile (not random walk)
+  // This prevents the AI from aimlessly wandering in already-explored areas
+  const fallbackDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  {
+    // Find the nearest walkable tile that has been visited the fewest times
+    let bestTarget: { x: number; y: number; visits: number } | null = null;
+    const bfsVisited = new Set<string>();
+    const bfsQueue: { x: number; y: number }[] = [{ x: px, y: py }];
+    bfsVisited.add(`${px},${py}`);
+    let bfsDepth = 0;
+    while (bfsQueue.length > 0 && bfsDepth < 200) {
+      const cur = bfsQueue.shift()!;
+      const key = `${currentFloor}:${cur.x},${cur.y}`;
+      const visitCount = visitedPositions.filter(p => p === key).length;
+      if (visitCount <= 1 && (cur.x !== px || cur.y !== py)) {
+        bestTarget = { x: cur.x, y: cur.y, visits: visitCount };
+        break;
+      }
+      if (!bestTarget || visitCount < bestTarget.visits) {
+        if (cur.x !== px || cur.y !== py) {
+          bestTarget = { x: cur.x, y: cur.y, visits: visitCount };
+        }
+      }
+      for (const [ddx, ddy] of fallbackDirs) {
+        const nx = cur.x + ddx, ny = cur.y + ddy;
+        const nKey = `${nx},${ny}`;
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h && !bfsVisited.has(nKey) && isWalkable(nx, ny)) {
+          bfsVisited.add(nKey);
+          bfsQueue.push({ x: nx, y: ny });
+        }
+      }
+      bfsDepth++;
+    }
+    if (bestTarget) {
+      const path = bfsToTarget(px, py, bestTarget.x, bestTarget.y, isWalkableForBFS, w, h, map);
+      if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+    }
+  }
+
+  // 6j. Ultimate fallback: non-repeating random walk
+  const shuffled = [...fallbackDirs].sort(() => rng.next() - 0.5);
   for (const [ddx, ddy] of shuffled) {
     const nx = px + ddx, ny = py + ddy;
     if (ny >= 0 && ny < h && nx >= 0 && nx < w && isWalkable(nx, ny)) {
