@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GamePhase } from '../types';
 import { useGameStore } from '../store/gameStore';
+import { AudioManager } from '../audio/AudioManager';
 import MapView from './MapView';
 import StatsPanel from './StatsPanel';
 import MessageLog from './MessageLog';
@@ -90,9 +91,11 @@ const GameScreen: React.FC = () => {
           break;
         case 'ArrowUp':
           setSelectedInvIndex(i => Math.max(0, i - 1));
+          AudioManager.playSFX('bump');
           break;
         case 'ArrowDown':
           setSelectedInvIndex(i => Math.min(player.inventory.length - 1, i + 1));
+          AudioManager.playSFX('bump');
           break;
         case 'u':
         case 'U':

@@ -727,9 +727,9 @@ export const useGameStore = create<GameStore>((set, get) => {
           if (currentMap[ny][nx].type === TileType.SecretWall && state.visibleTiles.has(`${nx},${ny}`)) {
             newMap[ny][nx] = {
               ...newMap[ny][nx],
-              type: TileType.Floor,
-              char: '·',
-              fg: '#555566',
+              type: TileType.DoorOpen,
+              char: '◌',
+              fg: '#aa88ff',
               bg: '#111118',
               walkable: true,
               transparent: true,
@@ -1301,7 +1301,15 @@ export const useGameStore = create<GameStore>((set, get) => {
             const newMap = finalState.map.map(row => row.map(t => ({ ...t })));
             const swTile = newMap[swPos.y][swPos.x];
             if (swTile.type === TileType.SecretWall) {
-              newMap[swPos.y][swPos.x] = { ...swTile, char: '░', fg: '#aa88cc', transparent: true };
+              newMap[swPos.y][swPos.x] = {
+                ...swTile,
+                type: TileType.DoorOpen,
+                char: '◌',
+                fg: '#aa88cc',
+                bg: '#111118',
+                walkable: true,
+                transparent: true,
+              };
               addMessages([msg('深渊低语揭示了一道暗墙...', MessageCategory.System, '#aa88cc')]);
               set({ map: newMap });
             }
@@ -2982,9 +2990,10 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       // Altar: +3 DEF for 3 turns
       if (tile.type === TileType.Altar) {
-        player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 3, damage: 3 }];
+        player.statusEffects = [...player.statusEffects, { type: StatusEffectType.DefenseUp, duration: 8, damage: 3 }];
         set({ player });
-        addMessages([msg('祭坛的力量涌遍全身！防御+3持续3回合！', MessageCategory.System, '#88ccff')]);
+        addMessages([msg('祭坛的力量涌遍全身！防御+3持续8回合！', MessageCategory.System, '#88ccff')]);
+        AudioManager.playSFX('relicAcquire');
       }
 
       // Fountain: Heal 50% HP + 20 MP (one-time use)
@@ -3008,17 +3017,16 @@ export const useGameStore = create<GameStore>((set, get) => {
           addMessages([msg(`碑文：${text}`, MessageCategory.Story, '#aaaaaa')]);
         }
         player.inscriptionCount++;
+        const stat = rng.pick(['str', 'dex', 'int', 'vit'] as const);
+        const statName = stat === 'str' ? '力量' : stat === 'dex' ? '灵巧' : stat === 'int' ? '智慧' : '活力';
         player.bonusStats = {
           ...player.bonusStats,
-          str: player.bonusStats.str + 1,
-          dex: player.bonusStats.dex + 1,
-          int: player.bonusStats.int + 1,
-          vit: player.bonusStats.vit + 1,
+          [stat]: player.bonusStats[stat] + 1,
         };
         const newMap = state.map.map(row => row.map(t => ({ ...t })));
         newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#aaaaaa', bg: 'transparent', walkable: true, transparent: true };
         set({ map: newMap, player });
-        addMessages([msg('碑文的力量融入了你的身体！全属性+1！', MessageCategory.System, '#ffcc44')]);
+        addMessages([msg(`碑文的力量融入了你的身体！${statName}+1！`, MessageCategory.System, '#ffcc44')]);
         AudioManager.playSFX('relicAcquire');
       }
 
@@ -3031,6 +3039,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#005533', bg: 'transparent', walkable: true, transparent: true };
         set({ map: newMap, player });
         addMessages([msg(`治愈水晶碎裂，回复了${hpHeal}点HP！`, MessageCategory.Item, '#44cc44')]);
+        AudioManager.playSFX('heal');
       }
 
       // CorruptionPool: Already handled by periodic effect
@@ -3274,27 +3283,33 @@ export const useGameStore = create<GameStore>((set, get) => {
             case PotionEffect.Strength:
               player.bonusStats = { ...player.bonusStats, str: player.bonusStats.str + potion.power };
               messages.push(msg(`力量永久提升 ${potion.power}！`, MessageCategory.Item, '#ff8844'));
+              AudioManager.playSFX('relicAcquire');
               break;
             case PotionEffect.Dexterity:
               player.bonusStats = { ...player.bonusStats, dex: player.bonusStats.dex + potion.power };
               messages.push(msg(`灵巧永久提升 ${potion.power}！`, MessageCategory.Item, '#44cc44'));
+              AudioManager.playSFX('relicAcquire');
               break;
             case PotionEffect.Intelligence:
               player.bonusStats = { ...player.bonusStats, int: player.bonusStats.int + potion.power };
               messages.push(msg(`智慧永久提升 ${potion.power}！`, MessageCategory.Item, '#4488ff'));
+              AudioManager.playSFX('relicAcquire');
               break;
             case PotionEffect.Poison:
               player.hp -= potion.power;
+              addFloatingText(player.pos.x, player.pos.y, `-${potion.power}`, '#44cc44', 'damage');
               messages.push(msg(`糟糕！这瓶药水有毒！受到 ${potion.power} 点伤害`, MessageCategory.Item, '#ff4444'));
+              AudioManager.playSFX('trap');
               break;
             case PotionEffect.Paralysis:
               player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Freeze, duration: potion.power, damage: 0 }];
               messages.push(msg('你被麻痹了！', MessageCategory.Item, '#ff4444'));
+              AudioManager.playSFX('trap');
               break;
             case PotionEffect.Confusion:
-              // BUG FIX: Confusion now actually applies the status
               player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Confusion, duration: potion.power, damage: 0 }];
               messages.push(msg('你感到头晕目眩，方向感全无！', MessageCategory.Item, '#cccc44'));
+              AudioManager.playSFX('trap');
               break;
             case PotionEffect.FullHeal:
               const healed = player.maxHp - player.hp;
@@ -3307,6 +3322,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             case PotionEffect.FireResist:
               player.statusEffects = [...player.statusEffects, { type: StatusEffectType.FireResist, duration: 5, damage: 0 }];
               messages.push(msg('你获得了火焰抗性！(5回合)', MessageCategory.Item, '#ff6622'));
+              AudioManager.playSFX('relicAcquire');
               break;
           }
 
@@ -3315,6 +3331,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         }
         case ItemType.Scroll: {
           const scroll = item as ScrollItem;
+          AudioManager.playSFX('skill');
           if (!scroll.identified) {
             const identified = identifyItem(scroll);
             player.inventory = player.inventory.map((inv, i) => i === index ? identified : inv);
@@ -3493,6 +3510,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           const food = item as FoodItem;
           player.hunger = player.hunger + food.nutrition;
           messages.push(msg(`你吃了${food.name}，恢复了 ${food.nutrition} 饱食度`, MessageCategory.Item, '#ccaa66'));
+          AudioManager.playSFX('heal');
           player.inventory = player.inventory.filter((_, i) => i !== index);
           break;
         }
@@ -3523,6 +3541,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       const player = equipItem(state.player, item, slot);
       set({ player });
+      AudioManager.playSFX('pickup');
       addMessages([msg(`你装备了${getItemName(item)}`, MessageCategory.Item, '#4488ff')]);
     },
 
@@ -4488,8 +4507,8 @@ export const useGameStore = create<GameStore>((set, get) => {
           if (player.hp > hpCost) {
             player.hp -= hpCost;
             player.bonusStats = { ...player.bonusStats, str: player.bonusStats.str + 3 };
-            // Mark as temporary (floor-only) - for simplicity, we'll just apply it
-            messages.push(msg(`献祭了${hpCost}HP，力量+3（本层有效）！`, MessageCategory.Item, '#ff4444'));
+            messages.push(msg(`献祭了${hpCost}HP，力量永久+3！`, MessageCategory.Item, '#ff4444'));
+            AudioManager.playSFX('relicAcquire');
           } else {
             messages.push(msg('HP不足！', MessageCategory.System, '#ff4444'));
           }
@@ -4499,7 +4518,8 @@ export const useGameStore = create<GameStore>((set, get) => {
           if (player.mp > 0) {
             player.mp = 0;
             player.bonusStats = { ...player.bonusStats, int: player.bonusStats.int + 3 };
-            messages.push(msg('献祭了所有MP，智慧+3（本层有效）！', MessageCategory.Item, '#4488ff'));
+            messages.push(msg('献祭了所有MP，智慧永久+3！', MessageCategory.Item, '#4488ff'));
+            AudioManager.playSFX('relicAcquire');
           } else {
             messages.push(msg('MP不足！', MessageCategory.System, '#ff4444'));
           }
