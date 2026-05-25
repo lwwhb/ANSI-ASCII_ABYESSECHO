@@ -7,6 +7,7 @@ import {
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
   placeThemedRooms, verifyConnectivity, findNearestWalkable,
+  ensureBossReachable,
 } from './DungeonGenerator';
 
 interface Fragment {
@@ -193,7 +194,7 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
       const frag = fragIdx >= 0 && fragIdx + 1 < fragments.length ? fragments[fragIdx + 1]
         : fragIdx >= 0 ? fragments[0] : fragments[0];
       const ft = frag.floorTiles.find(t => map[t.y][t.x].type === TileType.Floor);
-      if (ft) {
+      if (ft && map[ft.y][ft.x].type !== TileType.StairsDown) {
         shopPos = { x: ft.x, y: ft.y };
         map[ft.y][ft.x] = createTile(TileType.Shop, biome);
       }
@@ -203,7 +204,7 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
       const fragIdx = specialFrags.indexOf(eventFrag) + 1;
       const frag = fragIdx < fragments.length ? fragments[fragIdx] : fragments[0];
       const ft = frag.floorTiles.find(t => map[t.y][t.x].type === TileType.Floor && (!shopPos || t.x !== shopPos.x || t.y !== shopPos.y));
-      if (ft) {
+      if (ft && map[ft.y][ft.x].type !== TileType.StairsDown) {
         eventPos = { x: ft.x, y: ft.y };
         map[ft.y][ft.x] = createTile(TileType.Event, biome);
       }
@@ -216,6 +217,12 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
   // Boss arena
   if (boss?.arenaData) {
     placeArenaObjects(map, boss.arenaData);
+  }
+
+  // Ensure boss is reachable from player start
+  if (boss) {
+    const updatedBossPos = ensureBossReachable(map, playerStart, boss.pos, biome);
+    boss.pos = updatedBossPos;
   }
 
   // Elite + special rooms + secret walls

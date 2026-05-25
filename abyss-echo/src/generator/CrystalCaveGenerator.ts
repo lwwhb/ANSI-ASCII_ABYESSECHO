@@ -7,6 +7,7 @@ import {
   carveCorridor, placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
   placeThemedRooms, verifyConnectivity, findNearestWalkable, findWalkableInRoom,
+  ensureBossReachable,
 } from './DungeonGenerator';
 
 function floodFill(map: Tile[][], startX: number, startY: number, width: number, height: number, globalVisited: Set<string>): Set<string> {
@@ -340,13 +341,21 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
     if (rng.chance(config.shopChance)) {
       const shopRoom = rng.pick(eligibleRooms);
       shopPos = { x: rng.nextInt(shopRoom.x + 1, shopRoom.x + shopRoom.w - 2), y: rng.nextInt(shopRoom.y + 1, shopRoom.y + shopRoom.h - 2) };
-      map[shopPos.y][shopPos.x] = createTile(TileType.Shop, biome);
+      if (map[shopPos.y][shopPos.x].type !== TileType.StairsDown) {
+        map[shopPos.y][shopPos.x] = createTile(TileType.Shop, biome);
+      } else {
+        shopPos = undefined;
+      }
     }
     if (rng.chance(config.eventChance)) {
       const eventRoom = rng.pick(eligibleRooms);
       eventPos = { x: rng.nextInt(eventRoom.x + 1, eventRoom.x + eventRoom.w - 2), y: rng.nextInt(eventRoom.y + 1, eventRoom.y + eventRoom.h - 2) };
       if (!shopPos || eventPos.x !== shopPos.x || eventPos.y !== shopPos.y) {
-        map[eventPos.y][eventPos.x] = createTile(TileType.Event, biome);
+        if (map[eventPos.y][eventPos.x].type !== TileType.StairsDown) {
+          map[eventPos.y][eventPos.x] = createTile(TileType.Event, biome);
+        } else {
+          eventPos = undefined;
+        }
       } else {
         eventPos = undefined;
       }
@@ -359,6 +368,12 @@ export function generateCrystalCave(floor: number, seed: number): DungeonData {
   // Boss arena
   if (boss?.arenaData) {
     placeArenaObjects(map, boss.arenaData);
+  }
+
+  // Ensure boss is reachable from player start
+  if (boss) {
+    const updatedBossPos = ensureBossReachable(map, playerStart, boss.pos, biome);
+    boss.pos = updatedBossPos;
   }
 
   // Elite + special rooms + secret walls

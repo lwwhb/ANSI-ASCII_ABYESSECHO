@@ -293,11 +293,19 @@ const NEW_TILE_DEFAULTS: Record<string, { char: string; fg: string; bg: string; 
 // ============================================================
 
 export function verifyConnectivity(map: Tile[][], playerStart: Position, stairsDown: Position): boolean {
+  return bfsReachable(map, playerStart, stairsDown);
+}
+
+/**
+ * BFS reachability check between two positions.
+ * Also exported for direct use when checking boss connectivity.
+ */
+export function bfsReachable(map: Tile[][], from: Position, to: Position): boolean {
   const h = map.length;
   const w = map[0]?.length ?? 0;
   const visited = new Set<string>();
-  const queue: [number, number][] = [[playerStart.x, playerStart.y]];
-  visited.add(`${playerStart.x},${playerStart.y}`);
+  const queue: [number, number][] = [[from.x, from.y]];
+  visited.add(`${from.x},${from.y}`);
   const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
 
   while (queue.length > 0) {
@@ -310,12 +318,12 @@ export function verifyConnectivity(map: Tile[][], playerStart: Position, stairsD
       if (!tile) continue;
       if (tile.walkable || tile.type === TileType.Door || tile.type === TileType.DoorOpen || tile.type === TileType.EliteDoor) {
         visited.add(key);
-        if (nx === stairsDown.x && ny === stairsDown.y) return true;
+        if (nx === to.x && ny === to.y) return true;
         queue.push([nx, ny]);
       }
     }
   }
-  return visited.has(`${stairsDown.x},${stairsDown.y}`);
+  return visited.has(`${to.x},${to.y}`);
 }
 
 /**
@@ -379,6 +387,44 @@ export function findWalkableInRoom(map: Tile[][], room: Room): Position | null {
     }
   }
   return null;
+}
+
+/**
+ * Ensure boss position is reachable from playerStart.
+ * If not, carve an emergency corridor and brute-force if needed.
+ * Returns the (potentially updated) boss position.
+ */
+export function ensureBossReachable(
+  map: Tile[][],
+  playerStart: Position,
+  bossPos: Position,
+  biome: Biome,
+): Position {
+  if (bfsReachable(map, playerStart, bossPos)) return bossPos;
+
+  // Boss unreachable — carve emergency corridor
+  const walkStart = findNearestWalkable(map, playerStart);
+  const walkBoss = findNearestWalkable(map, bossPos);
+  carveCorridor(map, walkStart.x, walkStart.y, walkBoss.x, walkBoss.y, biome);
+
+  if (bfsReachable(map, playerStart, walkBoss)) return walkBoss;
+
+  // Brute-force: carve every non-walkable tile on direct path
+  let x = walkStart.x, y = walkStart.y;
+  const ex = walkBoss.x, ey = walkBoss.y;
+  while (x !== ex) {
+    if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && !map[y][x].walkable) {
+      map[y][x] = createTile(TileType.Corridor, biome);
+    }
+    x += x < ex ? 1 : -1;
+  }
+  while (y !== ey) {
+    if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && !map[y][x].walkable) {
+      map[y][x] = createTile(TileType.Corridor, biome);
+    }
+    y += y < ey ? 1 : -1;
+  }
+  return walkBoss;
 }
 
 // ============================================================

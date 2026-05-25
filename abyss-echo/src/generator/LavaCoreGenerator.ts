@@ -7,6 +7,7 @@ import {
   placeEnemies, placeItems, placeBoss, markBossRoom,
   pickStartAndStairs, placeArenaObjects, placeEliteAndSpecialRooms,
   placeThemedRooms, verifyConnectivity, findNearestWalkable,
+  ensureBossReachable,
 } from './DungeonGenerator';
 
 function carveBridge(map: Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome, width: number): void {
@@ -204,13 +205,21 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
     if (rng.chance(config.shopChance)) {
       const shopIsland = rng.pick(specialIslands);
       shopPos = { x: rng.nextInt(shopIsland.x + 1, shopIsland.x + shopIsland.w - 2), y: rng.nextInt(shopIsland.y + 1, shopIsland.y + shopIsland.h - 2) };
-      map[shopPos.y][shopPos.x] = createTile(TileType.Shop, biome);
+      if (map[shopPos.y][shopPos.x].type !== TileType.StairsDown) {
+        map[shopPos.y][shopPos.x] = createTile(TileType.Shop, biome);
+      } else {
+        shopPos = undefined;
+      }
     }
     if (rng.chance(config.eventChance)) {
       const eventIsland = rng.pick(specialIslands);
       eventPos = { x: rng.nextInt(eventIsland.x + 1, eventIsland.x + eventIsland.w - 2), y: rng.nextInt(eventIsland.y + 1, eventIsland.y + eventIsland.h - 2) };
       if (!shopPos || eventPos.x !== shopPos.x || eventPos.y !== shopPos.y) {
-        map[eventPos.y][eventPos.x] = createTile(TileType.Event, biome);
+        if (map[eventPos.y][eventPos.x].type !== TileType.StairsDown) {
+          map[eventPos.y][eventPos.x] = createTile(TileType.Event, biome);
+        } else {
+          eventPos = undefined;
+        }
       } else {
         eventPos = undefined;
       }
@@ -223,6 +232,12 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
   // Boss arena
   if (boss?.arenaData) {
     placeArenaObjects(map, boss.arenaData);
+  }
+
+  // Ensure boss is reachable from player start
+  if (boss) {
+    const updatedBossPos = ensureBossReachable(map, playerStart, boss.pos, biome);
+    boss.pos = updatedBossPos;
   }
 
   // Elite + special rooms + secret walls
