@@ -1,12 +1,18 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { StatusEffectType } from '../types';
 
 const CELL_SIZE = 16;
 const FONT_SIZE = 14;
+const FLOAT_DURATION = 1000; // 1 second animation
+const FLOAT_CLEANUP = 1200; // remove from store after 1.2s
+const FLOAT_RISE_PX = 30; // pixels to float upward
 
 const MapView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const offscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number>(0);
+
   const map = useGameStore(s => s.map);
   const player = useGameStore(s => s.player);
   const enemies = useGameStore(s => s.enemies);
@@ -14,33 +20,34 @@ const MapView: React.FC = () => {
   const floatingTexts = useGameStore(s => s.floatingTexts);
   const screenShake = useGameStore(s => s.screenShake);
 
+  // Render main map to offscreen canvas when game state changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !player || map.length === 0) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
     const width = map[0]?.length ?? 0;
     const height = map.length;
+
+    // Create or resize offscreen canvas
+    if (!offscreenRef.current || offscreenRef.current.width !== width * CELL_SIZE || offscreenRef.current.height !== height * CELL_SIZE) {
+      offscreenRef.current = document.createElement('canvas');
+      offscreenRef.current.width = width * CELL_SIZE;
+      offscreenRef.current.height = height * CELL_SIZE;
+    }
+    const offCtx = offscreenRef.current.getContext('2d');
+    if (!offCtx) return;
+
+    // Resize visible canvas
     canvas.width = width * CELL_SIZE;
     canvas.height = height * CELL_SIZE;
 
-    ctx.font = `${FONT_SIZE}px "Courier New", monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    offCtx.font = `${FONT_SIZE}px "Courier New", monospace`;
+    offCtx.textAlign = 'center';
+    offCtx.textBaseline = 'middle';
 
     // Clear
-    ctx.fillStyle = '#0a0a12';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Apply screen shake
-    try {
-      if (screenShake > 0) {
-        const shakeX = (Math.random() - 0.5) * screenShake * 2;
-        const shakeY = (Math.random() - 0.5) * screenShake * 2;
-        ctx.translate(shakeX, shakeY);
-      }
+    offCtx.fillStyle = '#0a0a12';
+    offCtx.fillRect(0, 0, offscreenRef.current.width, offscreenRef.current.height);
 
     // Build position lookup maps for O(1) access
     const itemMap = new Map<string, typeof items[0]>();
@@ -95,13 +102,13 @@ const MapView: React.FC = () => {
           const py = y * CELL_SIZE;
 
           // Draw background
-          ctx.fillStyle = bg;
-          ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+          offCtx.fillStyle = bg;
+          offCtx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
 
           // Draw character
           if (char !== ' ') {
-            ctx.fillStyle = fg;
-            ctx.fillText(char, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
+            offCtx.fillStyle = fg;
+            offCtx.fillText(char, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
           }
 
           // Status effect icons above enemy
@@ -114,12 +121,12 @@ const MapView: React.FC = () => {
               else if (se.type === StatusEffectType.Confusion) icons.push('⚡');
               else if (se.type === StatusEffectType.Bleed) icons.push('🩸');
             }
-            ctx.font = '8px sans-serif';
-            ctx.fillStyle = '#ff4444';
+            offCtx.font = '8px sans-serif';
+            offCtx.fillStyle = '#ff4444';
             const iconStr = icons.slice(0, 3).join('');
-            ctx.fillText(iconStr, px + CELL_SIZE / 2, py - 2);
+            offCtx.fillText(iconStr, px + CELL_SIZE / 2, py - 2);
             // Restore font
-            ctx.font = `${FONT_SIZE}px "Courier New", monospace`;
+            offCtx.font = `${FONT_SIZE}px "Courier New", monospace`;
           }
         } else if (tile.remembered) {
           char = tile.rememberedChar || tile.char;
@@ -130,42 +137,108 @@ const MapView: React.FC = () => {
           const py = y * CELL_SIZE;
 
           // Draw background
-          ctx.fillStyle = bg;
-          ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+          offCtx.fillStyle = bg;
+          offCtx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
 
           // Draw character
           if (char !== ' ') {
-            ctx.fillStyle = fg;
-            ctx.fillText(char, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
+            offCtx.fillStyle = fg;
+            offCtx.fillText(char, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
           }
-        } else {
-          continue; // Skip completely unseen tiles (already cleared to black)
         }
       }
     }
+  }, [map, player, enemies, items]);
 
-    // Render floating texts after main rendering
-    for (const ft of (floatingTexts || [])) {
+  // Animation loop for floating texts
+  const animate = useCallback(() => {
+    const canvas = canvasRef.current;
+    const offscreen = offscreenRef.current;
+    if (!canvas || !offscreen) {
+      rafRef.current = requestAnimationFrame(animate);
+      return;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      rafRef.current = requestAnimationFrame(animate);
+      return;
+    }
+
+    const now = performance.now();
+    const currentTexts = useGameStore.getState().floatingTexts || [];
+    const shake = useGameStore.getState().screenShake || 0;
+
+    // Clean up expired texts
+    const expired = currentTexts.some(ft => now - ft.createdAt > FLOAT_CLEANUP);
+    if (expired) {
+      useGameStore.setState({ floatingTexts: currentTexts.filter(ft => now - ft.createdAt <= FLOAT_CLEANUP) });
+    }
+
+    // Clear and draw base map from offscreen
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Apply screen shake
+    if (shake > 0) {
+      const shakeX = (Math.random() - 0.5) * shake * 2;
+      const shakeY = (Math.random() - 0.5) * shake * 2;
+      ctx.translate(shakeX, shakeY);
+    }
+
+    // Draw offscreen map
+    ctx.drawImage(offscreen, 0, 0);
+
+    // Render floating texts with animation
+    const activeTexts = currentTexts.filter(ft => now - ft.createdAt <= FLOAT_DURATION);
+    for (const ft of activeTexts) {
+      const elapsed = now - ft.createdAt;
+      const progress = Math.min(elapsed / FLOAT_DURATION, 1); // 0 → 1
+
       const px = ft.x * CELL_SIZE + CELL_SIZE / 2;
-      const py = ft.y * CELL_SIZE - (ft.age * 6); // Float upward
-      const alpha = Math.max(0, 1 - ft.age * 0.5);
+      const baseY = ft.y * CELL_SIZE;
+      const py = baseY - progress * FLOAT_RISE_PX;
+
+      // Ease-out curve for smoother deceleration
+      const easeProgress = 1 - Math.pow(1 - progress, 2);
+      const finalY = baseY - easeProgress * FLOAT_RISE_PX;
+
+      // Alpha: full for first 30%, then fade out
+      const alpha = progress < 0.3 ? 1 : Math.max(0, 1 - (progress - 0.3) / 0.7);
+
+      // Font size: 12→10 for damage, 10→8 for status
+      const baseFontSize = ft.type === 'crit' ? 14 : ft.type === 'status' ? 10 : 12;
+      const fontSize = baseFontSize - progress * 2;
+
       ctx.globalAlpha = alpha;
       ctx.fillStyle = ft.color;
-      ctx.font = 'bold 12px "Courier New", monospace';
-      ctx.fillText(ft.text, px, py);
+      ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Shadow for readability
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 3;
+      ctx.fillText(ft.text, px, finalY);
+      ctx.shadowBlur = 0;
     }
     ctx.globalAlpha = 1;
 
-    // Reset transform after rendering (guaranteed by finally)
-    } finally {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-    }
+    // Reset transform
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-    // Cleanup
+    rafRef.current = requestAnimationFrame(animate);
+  }, []);
+
+  // Start/stop animation loop
+  useEffect(() => {
+    rafRef.current = requestAnimationFrame(animate);
     return () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [map, player, enemies, items, floatingTexts, screenShake]);
+  }, [animate]);
 
   if (!player || map.length === 0) return null;
 

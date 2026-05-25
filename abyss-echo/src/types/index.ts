@@ -609,7 +609,7 @@ export interface GameState {
   pendingForge: boolean;
   themedRooms: { room: { x: number; y: number; w: number; h: number; centerX: number; centerY: number; theme?: RoomTheme }; theme: RoomTheme }[];
   steamVentTurns: { x: number; y: number; spawnTurn: number }[];
-  floatingTexts: { x: number; y: number; text: string; color: string; age: number }[];
+  floatingTexts: { x: number; y: number; text: string; color: string; createdAt: number; type?: 'damage' | 'heal' | 'status' | 'crit' }[];
   screenShake: number;
 }
 

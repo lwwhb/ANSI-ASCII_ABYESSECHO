@@ -37,6 +37,14 @@ function msg(text: string, category: MessageCategory, fg: string = '#cccccc'): M
 }
 
 // ============================================================
+// Floating text helper
+// ============================================================
+function addFloatingText(x: number, y: number, text: string, color: string, type: 'damage' | 'heal' | 'status' | 'crit' = 'damage') {
+  const state = useGameStore.getState();
+  useGameStore.setState({ floatingTexts: [...(state.floatingTexts || []), { x, y, text, color, createdAt: performance.now(), type }] });
+}
+
+// ============================================================
 // Persistence
 // ============================================================
 function loadHighScores() {
@@ -529,6 +537,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (player2.hunger <= 0) {
         player2.hunger = 0;
         player2.hp -= HUNGER_STARVE_DAMAGE;
+        addFloatingText(player2.pos.x, player2.pos.y, `-${HUNGER_STARVE_DAMAGE}`, '#ff8800', 'status');
         if (player2.hp <= 0) {
           handlePlayerDeath(player2, enemies2, msgs2, '饥饿致死');
           return;
@@ -632,6 +641,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       const result = processStatusEffects(player, true);
       player.hp -= result.damage;
       player.statusEffects = result.newStatusEffects;
+      if (result.damage > 0) addFloatingText(player.pos.x, player.pos.y, `-${result.damage}`, '#aa44ff', 'status');
       if (result.damage > 0) messages.push(...result.messages.map(m => msg(m, MessageCategory.Combat, '#ff4444')));
     }
 
@@ -656,6 +666,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     if (player.hunger <= 0) {
       player.hunger = 0;
       player.hp -= HUNGER_STARVE_DAMAGE;
+      addFloatingText(player.pos.x, player.pos.y, `-${HUNGER_STARVE_DAMAGE}`, '#ff8800', 'status');
       if (prevHunger > 0) {
         messages.push(msg('你饥饿难耐，生命在流逝...', MessageCategory.System, '#ff8844'));
       } else if ((state.turn + 1) % 3 === 0) {
@@ -674,7 +685,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Regeneration talent
     if (hasTalent(player, 'regeneration') && player.hp < player.maxHp) {
       player.hp = Math.min(player.maxHp, player.hp + 1);
-      set({ floatingTexts: [...(get().floatingTexts || []), { x: player.pos.x, y: player.pos.y, text: '+1', color: '#87ceeb', age: 0 }] });
+      addFloatingText(player.pos.x, player.pos.y, '+1', '#87ceeb', 'heal');
     }
     // MP regen: only in combat (enemies visible)
     const enemyInSight = enemies.some(e => e.hp > 0 && state.visibleTiles.has(`${e.pos.x},${e.pos.y}`));
@@ -694,7 +705,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         const heal = Math.floor(player.maxHp * 0.05);
         player.hp = Math.min(player.maxHp, player.hp + heal);
         messages.push(msg('永恒之焰回复了' + heal + '点HP', MessageCategory.Item, '#ff6644'));
-        set({ floatingTexts: [...(get().floatingTexts || []), { x: player.pos.x, y: player.pos.y, text: `+${heal}`, color: '#87ceeb', age: 0 }] });
+        addFloatingText(player.pos.x, player.pos.y, `+${heal}`, '#87ceeb', 'heal');
       }
     }
 
@@ -906,6 +917,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         if (enemies[i].statusEffects.length > 0) {
           const result = processStatusEffects(enemies[i], false);
           enemies[i] = { ...enemies[i], hp: enemies[i].hp - result.damage, statusEffects: result.newStatusEffects };
+          if (result.damage > 0) addFloatingText(enemies[i].pos.x, enemies[i].pos.y, `-${result.damage}`, '#aa44ff', 'status');
           if (enemies[i].hp <= 0) {
             const exp = getTalentModifiedExp(player, enemies[i].exp);
             const goldDrop = getTalentModifiedGoldDrop(player, enemies[i].goldDrop);
@@ -1010,6 +1022,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player);
               const ambushDamage = Math.max(1, Math.floor((enemy.attack + berserkAtkBonus) * 2 * 20 / (20 + defense)));
               player.hp -= ambushDamage;
+              addFloatingText(player.pos.x, player.pos.y, `-${ambushDamage}`, '#ff4444', 'damage');
               messages.push(msg(`伏击！${enemy.name}造成 ${ambushDamage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
               flashScreen('#ff000033');
               if (player.hp <= 0) { handlePlayerDeath(player, enemies, messages, `被${enemy.name}伏击`); return; }
@@ -1115,7 +1128,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               flashScreen('#ff000033');
 
               // Add floating text for player damage
-              set({ floatingTexts: [...(get().floatingTexts || []), { x: player.pos.x, y: player.pos.y, text: `-${damage}`, color: '#ff4444', age: 0 }] });
+              addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff4444', 'damage');
 
               // Elite Vampiric: Heal 30% of damage dealt
               if (enemies[i].isElite && enemies[i].eliteAffix === EliteAffix.Vampiric) {
@@ -1246,13 +1259,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
 
     // Age floating texts and remove those older than 2 turns
-    const currentState = get();
-    const agedFloatingTexts = (currentState.floatingTexts || [])
-      .map(ft => ({ ...ft, age: ft.age + 1 }))
-      .filter(ft => ft.age < 2);
+    // Floating texts are now time-based and auto-cleaned by MapView animation loop
 
     // Decrement screen shake
-    const newScreenShake = Math.max(0, currentState.screenShake - 2);
+    const newScreenShake = Math.max(0, get().screenShake - 2);
 
     set({
       turn: newTurn,
@@ -1263,7 +1273,6 @@ export const useGameStore = create<GameStore>((set, get) => {
       voidCorruption,
       currentFragmentTurns,
       warningPulse,
-      floatingTexts: agedFloatingTexts,
       screenShake: newScreenShake,
     });
     updateFOV();
@@ -1314,12 +1323,14 @@ export const useGameStore = create<GameStore>((set, get) => {
         let damage = Math.floor(enemy.attack * 1.5);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff6600', 'damage');
         messages.push(msg(`${enemy.name}释放了火球术！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#ff6644'));
         break;
       }
       case 'drain': {
         const damage = Math.floor(enemy.attack * 0.8);
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#aa44ff', 'damage');
         const eidx = enemies.findIndex(e => e.id === enemy.id);
         if (eidx >= 0) {
           enemies[eidx] = { ...enemies[eidx], hp: Math.min(enemies[eidx].maxHp, enemies[eidx].hp + Math.floor(damage / 2)) };
@@ -1367,6 +1378,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         let damage = Math.floor(enemy.attack * 1.8);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff6600', 'damage');
         messages.push(msg(`${enemy.name}喷出了龙息！造成 ${damage} 点🔥火伤害！${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#ff4422'));
         break;
       }
@@ -1385,6 +1397,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         let damage = Math.floor(enemy.attack * 1.5);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#cc44ff', 'damage');
         if (rng.chance(0.4)) {
           player.statusEffects = [...player.statusEffects, { type: StatusEffectType.Poison, duration: 5, damage: 4 }];
           messages.push(msg(`${enemy.name}释放了不可名状的力量！造成 ${damage} 点虚空伤害！你中毒了！(☠4伤害/5回合)${hasElementResist ? '(抗性减免)' : ''}`, MessageCategory.Combat, '#cc44ff'));
@@ -1396,6 +1409,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       case 'surprise': {
         const damage = Math.floor(enemy.attack * 2);
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff4444', 'crit');
         messages.push(msg(`${enemy.name}突然袭击！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff4444'));
         break;
       }
@@ -1448,6 +1462,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         // Soul Eater: can move through enemies (handled in movement AI)
         const damage = Math.floor(enemy.attack * 0.8);
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#aa66ff', 'damage');
         messages.push(msg(`${enemy.name}穿过了你！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#aa66ff'));
         break;
       }
@@ -1455,6 +1470,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         // Lava Worm: can swim in lava (movement handled in AI)
         const damage = Math.floor(enemy.attack * 0.7);
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#ff6622', 'damage');
         messages.push(msg(`${enemy.name}从熔岩中突袭！造成 ${damage} 点伤害！`, MessageCategory.Combat, '#ff6622'));
         break;
       }
@@ -1640,6 +1656,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         let damage = Math.floor(enemy.attack * 1.8);
         if (hasElementResist) { damage = Math.floor(damage * 0.7); }
         player.hp -= damage;
+        addFloatingText(player.pos.x, player.pos.y, `-${damage}`, '#cc44ff', 'damage');
         messages.push(msg(`${enemy.name}发射虚空射线！造成${damage}点伤害！`, MessageCategory.Combat, '#cc44ff'));
         break;
       }
@@ -1654,6 +1671,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           const bossIdx = enemies.findIndex(e => e.id === enemy.id);
           if (bossIdx >= 0) {
             enemies[bossIdx] = { ...enemy, hp: Math.min(enemy.maxHp, enemy.hp + healAmt) };
+            addFloatingText(enemy.pos.x, enemy.pos.y, `+${healAmt}`, '#44cc44', 'heal');
           }
           messages.push(msg(`${enemy.name}吞噬了${minion.name}！回复了${healAmt}点HP！`, MessageCategory.Combat, '#cc44ff'));
         } else {
@@ -1665,10 +1683,12 @@ export const useGameStore = create<GameStore>((set, get) => {
         const vampRate = enemy.bossPhase >= 3 ? 0.8 : 0.6;
         const dmg = Math.floor(enemy.attack * 1.0);
         player.hp -= dmg;
+        addFloatingText(player.pos.x, player.pos.y, `-${dmg}`, '#cc44ff', 'damage');
         const healAmt = Math.floor(dmg * vampRate);
         const bossIdx = enemies.findIndex(e => e.id === enemy.id);
         if (bossIdx >= 0) {
           enemies[bossIdx] = { ...enemy, hp: Math.min(enemy.maxHp, enemy.hp + healAmt) };
+          addFloatingText(enemy.pos.x, enemy.pos.y, `+${healAmt}`, '#44cc44', 'heal');
         }
         messages.push(msg(`${enemy.name}释放虚空脉冲！造成${dmg}点伤害并回复${healAmt}HP！`, MessageCategory.Combat, '#cc44ff'));
         break;
@@ -2159,6 +2179,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               const playerDef = getPlayerDefense(player);
               const selfDmg = Math.max(1, Math.floor(rawSelfDmg * 20 / (20 + playerDef)));
               player.hp -= selfDmg;
+              addFloatingText(player.pos.x, player.pos.y, `-${selfDmg}`, '#ff8844', 'damage');
               addMessages([msg(`☄️ 混沌核心反噬！受到${selfDmg}点连锁伤害！`, MessageCategory.Combat, '#ff4444')]);
             }
 
@@ -2168,7 +2189,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               if (affectedEnemy) {
                 affectedEnemy.hp -= chainDamage;
                 // Add floating text for chain reaction
-                set({ floatingTexts: [...(get().floatingTexts || []), { x: pos.x, y: pos.y, text: `${chainDamage}`, color: '#ffff00', age: 0 }] });
+                addFloatingText(pos.x, pos.y, `${chainDamage}`, '#ffff00', 'damage');
               }
             }
 
@@ -2228,7 +2249,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         // Add floating text for damage
         const damageText = result.critical ? `${finalDamage}!` : `${finalDamage}`;
         const damageColor = result.critical ? '#ffd700' : '#44ff44'; // Gold for crit, green for normal
-        set({ floatingTexts: [...(get().floatingTexts || []), { x: enemy.pos.x, y: enemy.pos.y, text: damageText, color: damageColor, age: 0 }] });
+        addFloatingText(enemy.pos.x, enemy.pos.y, damageText, damageColor, result.critical ? 'crit' : 'damage');
 
         // Screen shake on crit
         if (result.critical) {
@@ -2266,6 +2287,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         if (enemy.specialAbility === 'reflect' && rng.chance(0.2)) {
           const reflectDmg = Math.floor(finalDamage * 0.5);
           player.hp -= reflectDmg;
+          addFloatingText(player.pos.x, player.pos.y, `-${reflectDmg}`, '#ff88ff', 'status');
           messages.push(msg(`${enemy.name}反射了 ${reflectDmg} 点伤害！`, MessageCategory.Combat, '#88ccff'));
           flashScreen('#88ccff33');
         }
@@ -2477,6 +2499,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             const dist = Math.abs(enemy.pos.x - player.pos.x) + Math.abs(enemy.pos.y - player.pos.y);
             if (dist <= 3) {
               player.hp -= 15;
+              addFloatingText(player.pos.x, player.pos.y, '-15', '#ff44ff', 'damage');
               messages.push(msg('镜像体爆炸！受到15点伤害！', MessageCategory.Combat, '#ff44ff'));
             }
           }
@@ -2769,6 +2792,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           } else {
             const trapDmg = rng.nextInt(5, 16);
             player.hp -= trapDmg;
+            addFloatingText(player.pos.x, player.pos.y, `-${trapDmg}`, '#ff4444', 'damage');
             addMessages([msg(`石棺陷阱！受到${trapDmg}点伤害！`, MessageCategory.Combat, '#ff4444')]);
             flashScreen('#ff000033');
             AudioManager.playSFX('trap');
@@ -2840,6 +2864,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         const hasFireResist = player.statusEffects.some(e => e.type === StatusEffectType.FireResist);
         const lavaDmg = hasFireResist ? 1 : 5;
         player.hp -= lavaDmg;
+        addFloatingText(player.pos.x, player.pos.y, `-${lavaDmg}`, '#ff6600', 'status');
         addMessages([msg(hasFireResist ? `灼热的熔岩灼伤了你！(-${lavaDmg}HP) 火焰抗性抵消了大部分伤害！` : `灼热的熔岩灼伤了你！(-${lavaDmg}HP)`, MessageCategory.Environment, '#ff6622')]);
         flashScreen('#ff662233');
         AudioManager.playSFX('hit');
@@ -2882,6 +2907,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         const hasFireResist = tile.type === TileType.TrapFire && player.statusEffects.some(e => e.type === StatusEffectType.FireResist);
         const trapDmg = hasFireResist ? Math.floor(trapEffect.damage / 3) : trapEffect.damage;
         player.hp -= trapDmg;
+        addFloatingText(player.pos.x, player.pos.y, `-${trapDmg}`, '#ff4444', 'damage');
         if (trapEffect.statusEffect) {
           player.statusEffects = [...player.statusEffects, trapEffect.statusEffect];
         }
@@ -2966,6 +2992,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         const hpHeal = Math.floor(player.maxHp * 0.5);
         player.hp = Math.min(player.maxHp, player.hp + hpHeal);
         player.mp = Math.min(player.maxMp, player.mp + 20);
+        addFloatingText(player.pos.x, player.pos.y, `+${hpHeal}`, '#87ceeb', 'heal');
         const newMap = state.map.map(row => row.map(t => ({ ...t })));
         newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#335577', bg: 'transparent', walkable: true, transparent: true };
         set({ map: newMap, player });
@@ -2999,6 +3026,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (tile.type === TileType.HealCrystal) {
         const hpHeal = Math.floor(player.maxHp * 0.3);
         player.hp = Math.min(player.maxHp, player.hp + hpHeal);
+        addFloatingText(player.pos.x, player.pos.y, `+${hpHeal}`, '#87ceeb', 'heal');
         const newMap = state.map.map(row => row.map(t => ({ ...t })));
         newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '·', fg: '#005533', bg: 'transparent', walkable: true, transparent: true };
         set({ map: newMap, player });
@@ -3076,6 +3104,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (tile.type === TileType.SpikeTrap) {
         const trapDmg = 5 + Math.floor(state.currentFloor * 0.5);
         player.hp -= trapDmg;
+        addFloatingText(player.pos.x, player.pos.y, `-${trapDmg}`, '#ff4444', 'damage');
         addMessages([msg(`尖刺陷阱！受到${trapDmg}点伤害！`, MessageCategory.Combat, '#ff4444')]);
         flashScreen('#ff000033');
         AudioManager.playSFX('hit');
@@ -3235,7 +3264,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               player.hp = Math.min(player.maxHp, player.hp + potion.power);
               messages.push(msg(`你恢复了 ${potion.power} 点生命`, MessageCategory.Item, '#44cc44'));
               AudioManager.playSFX('heal');
-              set({ floatingTexts: [...(get().floatingTexts || []), { x: player.pos.x, y: player.pos.y, text: `+${potion.power}`, color: '#87ceeb', age: 0 }] });
+              addFloatingText(player.pos.x, player.pos.y, `+${potion.power}`, '#87ceeb', 'heal');
               break;
             case PotionEffect.ManaRestore:
               player.mp = Math.min(player.maxMp, player.mp + potion.power);
@@ -3268,8 +3297,10 @@ export const useGameStore = create<GameStore>((set, get) => {
               messages.push(msg('你感到头晕目眩，方向感全无！', MessageCategory.Item, '#cccc44'));
               break;
             case PotionEffect.FullHeal:
+              const healed = player.maxHp - player.hp;
               player.hp = player.maxHp;
               player.mp = player.maxMp;
+              if (healed > 0) addFloatingText(player.pos.x, player.pos.y, `+${healed}`, '#ffcc44', 'heal');
               messages.push(msg('你感觉焕然一新！所有伤势痊愈！', MessageCategory.Item, '#ffcc44'));
               AudioManager.playSFX('heal');
               break;
@@ -3340,6 +3371,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               const aliveBefore = new Set(state.enemies.filter(e => e.hp > 0).map(e => e.id));
               const enemies = state.enemies.map(e => {
                 if (e.hp > 0 && distance(player.pos, e.pos) <= 3) {
+                  addFloatingText(e.pos.x, e.pos.y, `-${power}`, '#ff6600', 'damage');
                   return { ...e, hp: e.hp - power };
                 }
                 return e;
@@ -3360,6 +3392,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               const aliveBefore = new Set(state.enemies.filter(e => e.hp > 0).map(e => e.id));
               const enemies = state.enemies.map(e => {
                 if (e.hp > 0 && distance(player.pos, e.pos) <= 3) {
+                  addFloatingText(e.pos.x, e.pos.y, `-${power}`, '#44aaff', 'damage');
                   const newE = { ...e, hp: e.hp - power };
                   newE.statusEffects = [...newE.statusEffects, { type: StatusEffectType.Freeze, duration: 2, damage: 0 }];
                   return newE;
@@ -3386,6 +3419,7 @@ export const useGameStore = create<GameStore>((set, get) => {
                 const enemies = state.enemies.map(e =>
                   e.id === closest.id ? { ...e, hp: e.hp - power } : e
                 );
+                addFloatingText(closest.pos.x, closest.pos.y, `-${power}`, '#cccc44', 'damage');
                 set({ enemies });
                 messages.push(msg(`闪电击中了${closest.name}，造成 ${power} 点伤害！`, MessageCategory.Combat, '#cccc44'));
                 if (closest.hp - power <= 0) {
@@ -3740,6 +3774,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             const critted = rng.chance(skillCritChance);
             if (critted) bashDmg = Math.floor(bashDmg * skillCritMult);
             target.hp -= bashDmg;
+            addFloatingText(target.pos.x, target.pos.y, `-${bashDmg}`, critted ? '#ffd700' : '#ff8844', critted ? 'crit' : 'damage');
             enemies = enemies.map(e => e.id === target.id ? target : e);
             messages.push(msg(critted ? `暴击！盾击！${target.name}被击退并眩晕！造成 ${bashDmg} 点伤害` : `盾击！${target.name}被击退并眩晕！造成 ${bashDmg} 点伤害`, MessageCategory.Combat, critted ? '#ffcc44' : '#ff8844'));
           } else {
@@ -3765,6 +3800,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             if (e.hp > 0 && distance(player.pos, e.pos) <= 1.5) {
               hitCount++;
               whirlHitIds.add(e.id);
+              addFloatingText(e.pos.x, e.pos.y, `-${whirlDmg}`, whirlCrit ? '#ffd700' : '#ff4444', whirlCrit ? 'crit' : 'damage');
               return { ...e, hp: e.hp - whirlDmg };
             }
             return e;
@@ -3789,6 +3825,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             enemies = enemies.map(e => {
               if (e.hp > 0 && distance(target.pos, e.pos) <= skill.radius) {
                 fbHitIds.add(e.id);
+                addFloatingText(e.pos.x, e.pos.y, `-${dmg}`, fbCrit ? '#ffd700' : '#ff6600', fbCrit ? 'crit' : 'damage');
                 return { ...e, hp: e.hp - dmg };
               }
               return e;
@@ -3819,7 +3856,13 @@ export const useGameStore = create<GameStore>((set, get) => {
             const clCrit = rng.chance(skillCritChance);
             if (clCrit) dmg = Math.floor(dmg * skillCritMult);
             const hitIds = new Set(targets.map(t => t.id));
-            enemies = enemies.map(e => hitIds.has(e.id) ? { ...e, hp: e.hp - dmg } : e);
+            enemies = enemies.map(e => {
+              if (hitIds.has(e.id)) {
+                addFloatingText(e.pos.x, e.pos.y, `-${dmg}`, clCrit ? '#ffd700' : '#cccc44', clCrit ? 'crit' : 'damage');
+                return { ...e, hp: e.hp - dmg };
+              }
+              return e;
+            });
             messages.push(msg(clCrit ? `暴击！闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！` : `闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！`, MessageCategory.Combat, clCrit ? '#ffcc44' : '#cccc44'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && hitIds.has(e2.id))) {
               player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
@@ -3850,6 +3893,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               const weaponDmg = getPlayerWeaponDamage(player);
               const critDmg = Math.floor((weaponDmg * skill.power + getEffectiveStats(player).str) * skillCritMult / 1.5);
               enemies = enemies.map(e => e.id === target.id ? { ...e, hp: e.hp - critDmg } : e);
+              addFloatingText(target.pos.x, target.pos.y, `-${critDmg}`, '#8844ff', 'crit');
               messages.push(msg(`暗影步！瞬移到${target.name}身边，暴击造成 ${critDmg} 点伤害！`, MessageCategory.Combat, '#8844ff'));
               if (target.hp - critDmg <= 0) {
                 player.exp += getTalentModifiedExp(player, target.exp); player.killCount++; if (target.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, target.goldDrop);
@@ -3879,6 +3923,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             if (e.hp > 0 && distance(player.pos, e.pos) <= skill.radius) {
               hitCount++;
               fokHitIds.add(e.id);
+              addFloatingText(e.pos.x, e.pos.y, `-${dmg}`, fokCrit ? '#ffd700' : '#aaaaaa', fokCrit ? 'crit' : 'damage');
               return { ...e, hp: e.hp - dmg };
             }
             return e;
@@ -4114,6 +4159,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           if (rng.chance(0.3)) {
             // It's a trap!
             player.hp -= 15;
+            addFloatingText(player.pos.x, player.pos.y, '-15', '#ff4444', 'damage');
             messages.push(msg('宝箱是个陷阱！受到15点伤害！', MessageCategory.Combat, '#ff4444'));
           } else {
             const loot = createRandomItem(state.currentFloor, rng, false);
