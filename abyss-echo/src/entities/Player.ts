@@ -65,6 +65,7 @@ export function createPlayer(name: string, charClass: CharacterClass): Player {
     comboAttackCount: 0,
     voidHeartUsed: false,
     extraTurnAccumulator: 0,
+    deserter: false,
   };
 }
 

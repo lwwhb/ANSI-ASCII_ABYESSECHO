@@ -17,7 +17,8 @@ const StatsPanel: React.FC = () => {
   const hpPercent = (player.hp / player.maxHp) * 100;
   const mpPercent = (player.mp / player.maxMp) * 100;
   const hungerPercent = (player.hunger / player.maxHunger) * 100;
-  const expPercent = (player.exp / player.expToNext) * 100;
+  const expThreshold = player.deserter ? Math.floor(player.expToNext * 1.5) : player.expToNext;
+  const expPercent = (player.exp / expThreshold) * 100;
   const skills = SKILL_DEFS[player.class];
 
   return (
@@ -58,7 +59,10 @@ const StatsPanel: React.FC = () => {
       />
 
       {/* EXP Bar */}
-      <Bar label="EXP" current={player.exp} max={player.expToNext} percent={expPercent} color="#ccaa22" bgColor="#332200" small />
+      {player.deserter && (
+        <div style={{ color: '#ff4444', fontSize: '10px', textAlign: 'center', marginBottom: '2px' }}>⚡ 逃亡者：升级经验+50%</div>
+      )}
+      <Bar label="EXP" current={player.exp} max={player.deserter ? Math.floor(player.expToNext * 1.5) : player.expToNext} percent={expPercent} color={player.deserter ? '#cc4422' : '#ccaa22'} bgColor="#332200" small />
 
       {/* Stats */}
       <div style={{ marginTop: '12px', borderTop: '1px solid #222244', paddingTop: '8px' }}>

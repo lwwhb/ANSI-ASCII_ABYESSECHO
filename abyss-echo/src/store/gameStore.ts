@@ -660,6 +660,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     const messages: Message[] = [];
 
     // Process player status effects
+    // Save damage-dealing effects BEFORE processing (processStatusEffects removes expired ones)
+    const damageTypes = new Set([StatusEffectType.Poison, StatusEffectType.Burn, StatusEffectType.Bleed]);
+    const dmgEffectsBefore = player.statusEffects.filter(e => damageTypes.has(e.type as StatusEffectType) && e.damage > 0);
+
     if (player.statusEffects.length > 0) {
       // Relic: FlameHeart - Burn damage increased
       if (hasRelic(player, RelicId.FlameHeart)) {
@@ -692,10 +696,9 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     // Check player death from status effects
     if (player.hp <= 0) {
-      const dmgEffects = player.statusEffects.filter(e => e.damage && e.damage > 0);
       const effectZh: Record<string, string> = { poison: '中毒', burn: '燃烧', bleed: '流血' };
-      const cause = dmgEffects.length > 0
-        ? `因${dmgEffects.map(e => effectZh[e.type] || e.type).join('和')}致死`
+      const cause = dmgEffectsBefore.length > 0
+        ? `因${dmgEffectsBefore.map(e => effectZh[e.type] || e.type).join('和')}致死`
         : '因异常状态致死';
       handlePlayerDeath(player, enemies, messages, cause);
       return;
@@ -2468,6 +2471,9 @@ export const useGameStore = create<GameStore>((set, get) => {
               ]);
             }
 
+            // 迷雾散去提示
+            messages.push(msg('深渊迷雾缓缓散去，前路已然明晰……', MessageCategory.Story, '#88ccff'));
+
             // Trigger boss blessing selection
             set({ bossBlessingPending: true, lastBossDefId: enemy.defId });
 
@@ -3781,6 +3787,28 @@ export const useGameStore = create<GameStore>((set, get) => {
       if (tile?.type !== TileType.StairsDown) {
         addMessages([msg('这里没有楼梯', MessageCategory.System, '#888888')]);
         return;
+      }
+
+      // Boss floor lock: cannot descend while Boss is alive
+      const bossFloor = [5, 10, 15, 20, 25, 30].includes(state.currentFloor);
+      if (bossFloor) {
+        const bossAlive = state.enemies.some(e => e.hp > 0 && e.isBoss);
+        if (bossAlive) {
+          // Extreme danger escape: HP ≤ 20% or starving with no food
+          const criticallyEndangered = state.player.hp <= Math.floor(state.player.maxHp * 0.2) ||
+            (state.player.hunger <= 0 && !state.player.inventory.some(i => i.type === ItemType.Food));
+          if (criticallyEndangered) {
+            // Allow escape with deserter penalty
+            state.player.deserter = true;
+            addMessages([
+              msg('你逃离了Boss的追杀...', MessageCategory.Story, '#ff4444'),
+              msg('逃亡者的诅咒降临：升级所需经验+50%', MessageCategory.System, '#ff6644'),
+            ]);
+          } else {
+            addMessages([msg('深渊迷雾遮蔽了前路……击败本层主宰方可驱散', MessageCategory.System, '#ff4444')]);
+            return;
+          }
+        }
       }
 
       const nextFloor = state.currentFloor + 1;

@@ -535,6 +535,7 @@ export interface Player extends EntityBase {
   _lifeSeedUsedThisFloor?: boolean;
   _fateWeaverCount?: number;
   _permanentBuffsThisRun?: number; // Track total permanent stat buffs to prevent unlimited stacking
+  deserter: boolean; // Escaped a Boss floor without killing the Boss — exp penalty
 }
 
 // --- Messages ---

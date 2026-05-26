@@ -76,6 +76,21 @@ export interface ClassSummary {
   scrollsUsed: Record<string, number>;  // P2: aggregate scroll usage
   errors: string[];
   bugs: BugReport[];
+  // v4: new analytical metrics
+  floorReachedPercentiles: { p25: number; p50: number; p75: number; p90: number };
+  avgTurnsByFloor: Map<number, number>;
+  avgLevelByFloor: Map<number, number>;
+  avgKillsByFloor: Map<number, number>;
+  avgDeathHpPercent: number;          // average HP% at moment of death
+  hungerDeathRate: number;            // % of runs that died to hunger
+  avgHungerZeroTurn: number | null;   // avg turn when hunger first hit 0
+  damageEfficiency: number;           // avgTotalDamageDealt / avgTotalDamageTaken
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(Math.floor(p / 100 * sorted.length), sorted.length - 1);
+  return sorted[idx];
 }
 
 export function computeClassSummary(results: RunResult[], maxFloor: number): ClassSummary {
@@ -101,6 +116,15 @@ export function computeClassSummary(results: RunResult[], maxFloor: number): Cla
   const aggregatePotions: Record<string, number> = {};
   const aggregateScrolls: Record<string, number> = {};
 
+  // v4: new metric accumulators
+  const floorsReached: number[] = [];
+  const deathHpPercents: number[] = [];
+  let hungerDeathCount = 0;
+  const hungerZeroTurns: number[] = [];
+  const turnsByFloor = new Map<number, number[]>();
+  const levelByFloor = new Map<number, number[]>();
+  const killsByFloor = new Map<number, number[]>();
+
   for (const r of results) {
     totalKills += r.totalKills;
     totalGold += r.totalGoldEarned;
@@ -115,6 +139,9 @@ export function computeClassSummary(results: RunResult[], maxFloor: number): Cla
     for (const [k, v] of Object.entries(r.potionsUsed ?? {})) aggregatePotions[k] = (aggregatePotions[k] ?? 0) + v;
     for (const [k, v] of Object.entries(r.scrollsUsed ?? {})) aggregateScrolls[k] = (aggregateScrolls[k] ?? 0) + v;
 
+    const reachedFloor = r.deathFloor ?? maxFloor;
+    floorsReached.push(reachedFloor);
+
     if (r.deathFloor === null) {
       survived++;
       totalDeathFloor += maxFloor;
@@ -123,17 +150,33 @@ export function computeClassSummary(results: RunResult[], maxFloor: number): Cla
       deathCauses.set(r.deathCause, (deathCauses.get(r.deathCause) ?? 0) + 1);
       deathFloorDist.set(r.deathFloor, (deathFloorDist.get(r.deathFloor) ?? 0) + 1);
     }
-    if ((r.deathFloor ?? maxFloor) > maxReached) maxReached = r.deathFloor ?? maxFloor;
+    if (reachedFloor > maxReached) maxReached = reachedFloor;
 
+    // v4: death HP% (clamp HP to 0 to avoid negative percentages from overkill)
+    if (r.deathSnapshot && r.deathSnapshot.maxHp > 0) {
+      deathHpPercents.push(Math.round(Math.max(0, r.deathSnapshot.hp) / r.deathSnapshot.maxHp * 100));
+    }
+
+    // v4: hunger stress
+    if (r.deathCause?.includes('饥饿')) hungerDeathCount++;
+    if (r.hungerDeathTurns != null) hungerZeroTurns.push(r.hungerDeathTurns);
+
+    // Per-floor aggregation (existing + new)
     for (const f of r.floors) {
       if (!hpByFloor.has(f.floor)) hpByFloor.set(f.floor, []);
       if (!goldByFloor.has(f.floor)) goldByFloor.set(f.floor, []);
       if (!equipPowerByFloor.has(f.floor)) equipPowerByFloor.set(f.floor, []);
       if (!mpByFloor.has(f.floor)) mpByFloor.set(f.floor, []);
+      if (!turnsByFloor.has(f.floor)) turnsByFloor.set(f.floor, []);
+      if (!levelByFloor.has(f.floor)) levelByFloor.set(f.floor, []);
+      if (!killsByFloor.has(f.floor)) killsByFloor.set(f.floor, []);
       hpByFloor.get(f.floor)!.push(f.hp);
       goldByFloor.get(f.floor)!.push(f.gold);
       equipPowerByFloor.get(f.floor)!.push(f.equipmentPower);
       mpByFloor.get(f.floor)!.push(f.mp);
+      turnsByFloor.get(f.floor)!.push(f.turnOnExit);
+      levelByFloor.get(f.floor)!.push(f.level);
+      killsByFloor.get(f.floor)!.push(f.enemiesKilled);
     }
   }
 
@@ -146,12 +189,29 @@ export function computeClassSummary(results: RunResult[], maxFloor: number): Cla
   for (const [floor, golds] of goldByFloor) avgGoldByFloor.set(floor, golds.reduce((a, b) => a + b, 0) / golds.length);
   for (const [floor, powers] of equipPowerByFloor) avgEquipPowerByFloor.set(floor, powers.reduce((a, b) => a + b, 0) / powers.length);
 
+  // v4: avg turns / level / kills per floor
+  const avgTurnsByFloor = new Map<number, number>();
+  const avgLevelByFloor = new Map<number, number>();
+  const avgKillsByFloorMap = new Map<number, number>();
+  for (const [floor, turns] of turnsByFloor) avgTurnsByFloor.set(floor, turns.reduce((a, b) => a + b, 0) / turns.length);
+  for (const [floor, levels] of levelByFloor) avgLevelByFloor.set(floor, levels.reduce((a, b) => a + b, 0) / levels.length);
+  for (const [floor, kills] of killsByFloor) avgKillsByFloorMap.set(floor, kills.reduce((a, b) => a + b, 0) / kills.length);
+
   // P3: Survival rate by floor
   const survivalByFloor = new Map<number, number>();
   for (let f = 1; f <= maxFloor; f++) {
     const alive = results.filter(r => (r.deathFloor ?? maxFloor + 1) > f).length;
     survivalByFloor.set(f, (alive / runs) * 100);
   }
+
+  // v4: floor reached percentiles
+  const sortedFloors = [...floorsReached].sort((a, b) => a - b);
+  const floorReachedPercentiles = {
+    p25: percentile(sortedFloors, 25),
+    p50: percentile(sortedFloors, 50),
+    p75: percentile(sortedFloors, 75),
+    p90: percentile(sortedFloors, 90),
+  };
 
   return {
     className,
@@ -176,6 +236,15 @@ export function computeClassSummary(results: RunResult[], maxFloor: number): Cla
     scrollsUsed: aggregateScrolls,
     errors: allErrors,
     bugs: allBugs,
+    // v4: new metrics
+    floorReachedPercentiles,
+    avgTurnsByFloor,
+    avgLevelByFloor,
+    avgKillsByFloor: avgKillsByFloorMap,
+    avgDeathHpPercent: deathHpPercents.length > 0 ? deathHpPercents.reduce((a, b) => a + b, 0) / deathHpPercents.length : 0,
+    hungerDeathRate: (hungerDeathCount / runs) * 100,
+    avgHungerZeroTurn: hungerZeroTurns.length > 0 ? Math.round(hungerZeroTurns.reduce((a, b) => a + b, 0) / hungerZeroTurns.length) : null,
+    damageEfficiency: totalDmgTaken > 0 ? totalDmgDealt / totalDmgTaken : 0,
   };
 }
 
@@ -196,12 +265,24 @@ export function formatReport(summaries: ClassSummary[], maxFloor: number): strin
     lines.push(`│ 运行次数: ${s.runs}`.padEnd(79) + '│');
     lines.push(`│ 平均死亡楼层: ${s.avgDeathFloor.toFixed(1)}`.padEnd(79) + '│');
     lines.push(`│ 最高到达楼层: ${s.maxFloor}`.padEnd(79) + '│');
+    const fp = s.floorReachedPercentiles;
+    lines.push(`│ 楼层到达: P25=F${fp.p25}, P50=F${fp.p50}, P75=F${fp.p75}, P90=F${fp.p90}`.padEnd(79) + '│');
     lines.push(`│ 全程存活率: ${s.survivalRate.toFixed(1)}%`.padEnd(79) + '│');
     lines.push(`│ 平均击杀数: ${s.avgKillsPerRun.toFixed(1)}`.padEnd(79) + '│');
     lines.push(`│ 平均Boss击杀: ${s.bossKillsPerRun.toFixed(1)}`.padEnd(79) + '│');
     lines.push(`│ 平均获得金币: ${s.avgGoldPerRun.toFixed(0)}`.padEnd(79) + '│');
     lines.push(`│ 平均受到伤害: ${s.avgTotalDamageTaken.toFixed(0)}`.padEnd(79) + '│');
     lines.push(`│ 平均造成伤害: ${s.avgTotalDamageDealt.toFixed(0)}`.padEnd(79) + '│');
+    lines.push(`│ 伤害效率: ${s.damageEfficiency.toFixed(2)}x (造成/受到)`.padEnd(79) + '│');
+    // deathHpPercents is computed in computeClassSummary; if avgDeathHpPercent is 0
+    // it could mean "no data" (never died) or "always overkilled to 0HP"
+    // We use deathFloorDistribution.size > 0 as proxy for "has deaths"
+    const hasDeaths = s.deathFloorDistribution.size > 0;
+    const deathHpLabel = hasDeaths ? `${s.avgDeathHpPercent.toFixed(0)}%` : '—';
+    const deathStyle = !hasDeaths ? '' : s.avgDeathHpPercent > 30 ? '(多为消耗战)' : s.avgDeathHpPercent > 10 ? '(猝死风险高)' : '(极易被秒杀)';
+    lines.push(`│ 死亡时平均HP: ${deathHpLabel} ${deathStyle}`.padEnd(79) + '│');
+    const hungerLabel = s.avgHungerZeroTurn != null ? `饥饿归零 T${s.avgHungerZeroTurn}` : '未触发';
+    lines.push(`│ 饥饿压力: 饿死率${s.hungerDeathRate.toFixed(0)}%, ${hungerLabel}`.padEnd(79) + '│');
 
     // Death cause distribution
     if (s.deathCauseCount.size > 0) {
@@ -280,6 +361,45 @@ export function formatReport(summaries: ClassSummary[], maxFloor: number): strin
         const barLen = Math.max(0, Math.min(Math.floor(rate / 2), 50));
         const bar = '█'.repeat(barLen);
         lines.push(`│   F${String(floor).padStart(2)}: ${bar} ${rate.toFixed(0)}%`.padEnd(79) + '│');
+      }
+    }
+
+    // v4: Avg turns per floor
+    if (s.avgTurnsByFloor.size > 0) {
+      lines.push(`├${'─'.repeat(78)}┤`);
+      lines.push(`│ 每层平均回合:`.padEnd(79) + '│');
+      const tFloors = [...s.avgTurnsByFloor.keys()].sort((a, b) => a - b);
+      for (const floor of tFloors) {
+        const turns = s.avgTurnsByFloor.get(floor)!;
+        const barLen = Math.max(0, Math.min(Math.floor(turns / 5), 50));
+        const bar = '█'.repeat(barLen);
+        lines.push(`│   F${String(floor).padStart(2)}: ${bar} ${turns.toFixed(0)}回合`.padEnd(79) + '│');
+      }
+    }
+
+    // v4: Avg level per floor
+    if (s.avgLevelByFloor.size > 0) {
+      lines.push(`├${'─'.repeat(78)}┤`);
+      lines.push(`│ 每层平均等级:`.padEnd(79) + '│');
+      const lFloors = [...s.avgLevelByFloor.keys()].sort((a, b) => a - b);
+      for (const floor of lFloors) {
+        const level = s.avgLevelByFloor.get(floor)!;
+        const barLen = Math.max(0, Math.min(Math.floor(level * 2), 50));
+        const bar = '█'.repeat(barLen);
+        lines.push(`│   F${String(floor).padStart(2)}: ${bar} Lv${level.toFixed(1)}`.padEnd(79) + '│');
+      }
+    }
+
+    // v4: Avg kills per floor
+    if (s.avgKillsByFloor.size > 0) {
+      lines.push(`├${'─'.repeat(78)}┤`);
+      lines.push(`│ 每层平均击杀:`.padEnd(79) + '│');
+      const kFloors = [...s.avgKillsByFloor.keys()].sort((a, b) => a - b);
+      for (const floor of kFloors) {
+        const kills = s.avgKillsByFloor.get(floor)!;
+        const barLen = Math.max(0, Math.min(Math.floor(kills), 50));
+        const bar = '█'.repeat(barLen);
+        lines.push(`│   F${String(floor).padStart(2)}: ${bar} ${kills.toFixed(1)}杀`.padEnd(79) + '│');
       }
     }
 
@@ -415,6 +535,36 @@ export function formatReport(summaries: ClassSummary[], maxFloor: number): strin
     }
     lines.push('');
 
+    // v4: Floor reached percentiles comparison
+    lines.push('  楼层到达百分位对比:');
+    for (const s of summaries) {
+      const fp = s.floorReachedPercentiles;
+      lines.push(`    ${s.className}: P50=F${fp.p50}, P75=F${fp.p75}, P90=F${fp.p90}`);
+    }
+    lines.push('');
+
+    // v4: Death HP% comparison
+    lines.push('  死亡时HP%对比 (猝死程度):');
+    for (const s of summaries) {
+      lines.push(`    ${s.className}: ${s.avgDeathHpPercent.toFixed(0)}%`);
+    }
+    lines.push('');
+
+    // v4: Damage efficiency comparison
+    lines.push('  伤害效率对比 (造成/受到):');
+    for (const s of summaries) {
+      lines.push(`    ${s.className}: ${s.damageEfficiency.toFixed(2)}x`);
+    }
+    lines.push('');
+
+    // v4: Hunger stress comparison
+    lines.push('  饥饿压力对比:');
+    for (const s of summaries) {
+      const hz = s.avgHungerZeroTurn != null ? `归零T${s.avgHungerZeroTurn}` : '未触发';
+      lines.push(`    ${s.className}: 饿死率${s.hungerDeathRate.toFixed(0)}%, ${hz}`);
+    }
+    lines.push('');
+
     // Flag imbalances
     const maxSurvival = Math.max(...summaries.map(s => s.survivalRate));
     const minSurvival = Math.min(...summaries.map(s => s.survivalRate));
@@ -426,6 +576,18 @@ export function formatReport(summaries: ClassSummary[], maxFloor: number): strin
       if (s.avgDeathFloor < 5 && s.survivalRate < 30) {
         lines.push(`  ⚠ ${s.className} 平均死亡楼层过低 (${s.avgDeathFloor.toFixed(1)})，可能需要加强`);
       }
+      if (s.avgDeathHpPercent > 0 && s.avgDeathHpPercent < 15) {
+        lines.push(`  ⚠ ${s.className} 死亡时平均HP极低 (${s.avgDeathHpPercent.toFixed(0)}%)，可能存在被秒杀问题`);
+      }
+      if (s.hungerDeathRate > 30) {
+        lines.push(`  ⚠ ${s.className} 饿死率过高 (${s.hungerDeathRate.toFixed(0)}%)，饥饿压力过大`);
+      }
+    }
+
+    const maxDmgEff = Math.max(...summaries.map(s => s.damageEfficiency));
+    const minDmgEff = Math.min(...summaries.map(s => s.damageEfficiency));
+    if (maxDmgEff > 0 && minDmgEff / maxDmgEff < 0.5) {
+      lines.push('  ⚠ 职业间伤害效率差异过大 (>2x)，建议调整弱势职业输出');
     }
   }
 

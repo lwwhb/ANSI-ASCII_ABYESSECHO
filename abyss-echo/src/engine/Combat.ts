@@ -362,7 +362,8 @@ export function expForLevel(level: number): number {
 }
 
 export function checkLevelUp(player: Player): boolean {
-  return player.exp >= player.expToNext;
+  const threshold = player.deserter ? Math.floor(player.expToNext * 1.5) : player.expToNext;
+  return player.exp >= threshold;
 }
 
 export function applyLevelUp(player: Player): Player {

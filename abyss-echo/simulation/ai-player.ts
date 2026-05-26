@@ -13,6 +13,9 @@ import { SeededRandom } from '../src/utils/random.js';
 const VISITED_BUFFER_SIZE = 30;
 const visitedPositions: string[] = [];
 
+// Track last failed equip attempt to avoid infinite equip loops
+let lastFailedEquipKey = '';
+
 function trackPosition(x: number, y: number, floor: number): void {
   const key = `${floor}:${x},${y}`;
   visitedPositions.push(key);
@@ -52,6 +55,11 @@ function getLeastVisitedDirection(px: number, py: number, floor: number, isWalka
 
 export function resetVisitedPositions(): void {
   visitedPositions.length = 0;
+  lastFailedEquipKey = '';
+}
+
+export function markEquipFailed(key: string): void {
+  lastFailedEquipKey = key;
 }
 
 export interface AIAction {
@@ -898,10 +906,15 @@ export function decideAction(
 
   // ---- 1. CRITICAL SURVIVAL ----
 
-  // 1a. Auto-equip upgrades (free action)
+  // 1a. Auto-equip upgrades (free action) — skip if last equip attempt failed
   const equipUpgrade = findBestEquipUpgrade(player);
   if (equipUpgrade) {
-    return { type: 'equip', itemIndex: equipUpgrade.itemIndex, targetSlot: equipUpgrade.slot };
+    const equipKey = `${equipUpgrade.itemIndex}:${equipUpgrade.slot}:${player.inventory[equipUpgrade.itemIndex]?.name}`;
+    if (equipKey !== lastFailedEquipKey) {
+      return { type: 'equip', itemIndex: equipUpgrade.itemIndex, targetSlot: equipUpgrade.slot };
+    }
+  } else {
+    lastFailedEquipKey = ''; // reset when no upgrade found
   }
 
   // 1b. Remove curse if needed
@@ -935,14 +948,15 @@ export function decideAction(
   }
 
   // ---- 1e. SPECIAL TERRAIN INTERACTION (adjacent or underfoot) ----
-  // Sarcophagus: 50% item, 50% trap — worth it when healthy and no enemies
-  const adjDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-  for (const [ddx, ddy] of adjDirs) {
-    const nx = px + ddx, ny = py + ddy;
-    if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
-    const tile = map[ny]?.[nx];
-    if (!tile) continue;
-    const t = tile.type as string;
+  // Skip when stuck too long on floor — these are optional, don't block descent
+  if (turnOnFloor <= 150) {
+    const adjDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    for (const [ddx, ddy] of adjDirs) {
+      const nx = px + ddx, ny = py + ddy;
+      if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
+      const tile = map[ny]?.[nx];
+      if (!tile) continue;
+      const t = tile.type as string;
     // Sarcophagus: open when healthy and few enemies nearby
     if ((t === 'sarcophagus' || t === 'hiddenSarcophagus') && player.hp > Math.floor(player.maxHp * 0.6) && visibleEnemies8.length <= 1) {
       return { type: 'move', dx: ddx, dy: ddy };
@@ -959,12 +973,14 @@ export function decideAction(
     if (t === 'inscription') {
       return { type: 'move', dx: ddx, dy: ddy };
     }
+    }
   }
   // Portal underfoot or adjacent: use when surrounded or as shortcut
   if (map[py]?.[px]?.type as string === 'portal' && adjEnemyCount >= 2) {
     return { type: 'wait' }; // Stepping on portal triggers teleport
   }
-  for (const [ddx, ddy] of adjDirs) {
+  const adjDirsPortal = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  for (const [ddx, ddy] of adjDirsPortal) {
     const nx = px + ddx, ny = py + ddy;
     if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
     if ((map[ny]?.[nx]?.type as string) === 'portal' && adjEnemyCount >= 2) {
@@ -972,10 +988,151 @@ export function decideAction(
     }
   }
 
-  // ---- 2. BOSS FLOOR PREPARATION & BOSS SEEK-AND-DESTROY ----
+  // ---- 2. BOSS FLOOR: SINGLE-MINDED SEEK-AND-DESTROY ----
+  // On boss floor, the ONLY priority is: find Boss → kill Boss → then descend.
+  // All other priorities (items, doors, exploration) are subordinate to this goal.
 
   const onBossFloor = isBossFloor(currentFloor);
   const approachingBossFloor = isApproachingBossFloor(currentFloor);
+  const bossAlive = onBossFloor && enemies.some(e => e.hp > 0 && e.isBoss);
+
+  if (onBossFloor && bossAlive) {
+    const boss = enemies.find(e => e.hp > 0 && e.isBoss)!;
+
+    // --- 2-ESCAPE: critically endangered (HP<20% or starving) → flee to stairs ---
+    const bossCriticallyEndangered = player.hp <= Math.floor(player.maxHp * 0.2) ||
+      (player.hunger <= 0 && !player.inventory.some(i => i.type === ItemType.Food));
+    if (bossCriticallyEndangered) {
+      if (isOnStairsDown(px, py, map)) return { type: 'descend' };
+      const stairsTarget = findNearestTile(
+        px, py,
+        (x, y) => map[y]?.[x]?.type === ('stairsDown' as TileType),
+        isWalkableForBFS, w, h, map
+      );
+      if (stairsTarget) {
+        if (stairsTarget.x === px && stairsTarget.y === py) return { type: 'descend' };
+        const path = bfsToTarget(px, py, stairsTarget.x, stairsTarget.y, isWalkableForBFS, w, h, map);
+        if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+      }
+      // Can't find stairs — keep fighting, nothing to lose
+    }
+
+    // --- 2-FIGHT: Boss visible — engage immediately ---
+    if (bossVisible && nearestBoss) {
+      const bossDist = Math.abs(nearestBoss.pos.x - px) + Math.abs(nearestBoss.pos.y - py);
+
+      // Adjacent regular enemies → clear them first only if boss not adjacent
+      const adjacentRegulars = getAdjacentEnemiesCount(player, enemies.filter(e => !e.isBoss && e.hp > 0));
+      if (adjacentRegulars > 0 && bossDist > 1) {
+        // Fall through to section 3 (normal combat) to clear regulars
+      } else if (bossDist <= 1) {
+        // Boss adjacent — full combat rotation
+        if (player.class === CharacterClass.Warrior) {
+          if (skillCooldowns[0] <= 0 && player.mp >= 5) return { type: 'useSkill', itemIndex: 0 };
+          if (skillCooldowns[1] <= 0 && player.mp >= 8) {
+            const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
+            if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
+          }
+          if (adjEnemyCount >= 2 && skillCooldowns[2] <= 0 && player.mp >= 10) return { type: 'useSkill', itemIndex: 2 };
+          if (player.hp < Math.floor(player.maxHp * 0.5)) {
+            const potionIdx = findHealingPotion(player);
+            if (potionIdx >= 0) return { type: 'useItem', itemIndex: potionIdx };
+          }
+          return { type: 'move', dx: nearestBoss.pos.x - px, dy: nearestBoss.pos.y - py };
+        }
+        if (player.class === CharacterClass.Mage) {
+          if (player.hp < Math.floor(player.maxHp * 0.4)) {
+            const potionIdx = findHealingPotion(player);
+            if (potionIdx >= 0) return { type: 'useItem', itemIndex: potionIdx };
+          }
+          if (skillCooldowns[1] <= 0 && player.mp >= 6) {
+            const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
+            if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
+          }
+          const retreat = getRetreatDirection(player, enemies, isWalkableForBFS, w, h);
+          if (retreat) return retreat;
+          return { type: 'move', dx: nearestBoss.pos.x - px, dy: nearestBoss.pos.y - py };
+        }
+        if (player.class === CharacterClass.Rogue) {
+          if (skillCooldowns[1] <= 0 && player.mp >= 4) {
+            const hasPoisonBlade = player.statusEffects.some(e => e.type === StatusEffectType.PoisonBlade);
+            if (!hasPoisonBlade) return { type: 'useSkill', itemIndex: 1 };
+          }
+          if (adjEnemyCount >= 2 && skillCooldowns[2] <= 0 && player.mp >= 8) return { type: 'useSkill', itemIndex: 2 };
+          if (player.hp < Math.floor(player.maxHp * 0.5)) {
+            const potionIdx = findHealingPotion(player);
+            if (potionIdx >= 0) return { type: 'useItem', itemIndex: potionIdx };
+          }
+          if (player.hp < Math.floor(player.maxHp * 0.6) && skillCooldowns[0] <= 0 && player.mp >= 3) {
+            return { type: 'useSkill', itemIndex: 0 };
+          }
+          return { type: 'move', dx: nearestBoss.pos.x - px, dy: nearestBoss.pos.y - py };
+        }
+      } else {
+        // Boss at range — approach and cast
+        if (player.class === CharacterClass.Mage) {
+          if (bossDist <= 6 && skillCooldowns[2] <= 0 && player.mp >= 10) return { type: 'useSkill', itemIndex: 2 };
+          if (bossDist <= 5 && skillCooldowns[0] <= 0 && player.mp >= 7) return { type: 'useSkill', itemIndex: 0 };
+          if (bossDist <= 2) {
+            const retreat = getRetreatDirection(player, enemies, isWalkableForBFS, w, h);
+            if (retreat) return retreat;
+          }
+          const path = bfsToTarget(px, py, nearestBoss.pos.x, nearestBoss.pos.y, isWalkableForBFS, w, h, map);
+          if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+          return { type: 'move', dx: nearestBoss.pos.x - px, dy: nearestBoss.pos.y - py };
+        }
+        // Warrior/Rogue at range → move toward boss
+        const path = bfsToTarget(px, py, nearestBoss.pos.x, nearestBoss.pos.y, isWalkableForBFS, w, h, map);
+        if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+      }
+    }
+
+    // --- 2-SEEK: Boss not visible — navigate directly to boss position ---
+    // Boss position is always known from enemy data — go there immediately
+    {
+      const bossDist = Math.abs(boss.pos.x - px) + Math.abs(boss.pos.y - py);
+      // Boss adjacent but not visible? Must be behind a door — open it
+      if (bossDist <= 1) {
+        const adjDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+        for (const [ddx, ddy] of adjDirs) {
+          const nx = px + ddx, ny = py + ddy;
+          if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+            const t = map[ny]?.[nx]?.type as string;
+            if (t === 'door') return { type: 'openDoor', dx: ddx, dy: ddy };
+            if (t === 'eliteDoor') return { type: 'move', dx: ddx, dy: ddy };
+          }
+        }
+      }
+      // Navigate to boss — BFS directly
+      const path = bfsToTarget(px, py, boss.pos.x, boss.pos.y, isWalkableForBFS, w, h, map);
+      if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+      // BFS failed (boss behind wall/door we can't path through) — seek doors to open
+      const doorTarget = findNearestTile(
+        px, py,
+        (x, y) => {
+          const t = map[y]?.[x]?.type as string;
+          return t === 'door' || t === 'eliteDoor';
+        },
+        isWalkableForBFS, w, h, map
+      );
+      if (doorTarget && (doorTarget.x !== px || doorTarget.y !== py)) {
+        const dPath = bfsToTarget(px, py, doorTarget.x, doorTarget.y, isWalkableForBFS, w, h, map);
+        if (dPath) return { type: 'move', dx: dPath.dx, dy: dPath.dy };
+      }
+      // Open adjacent door if present
+      const adjDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+      for (const [ddx, ddy] of adjDirs) {
+        const nx = px + ddx, ny = py + ddy;
+        if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+          const t = map[ny]?.[nx]?.type as string;
+          if (t === 'door') return { type: 'openDoor', dx: ddx, dy: ddy };
+          if (t === 'eliteDoor') return { type: 'move', dx: ddx, dy: ddy };
+        }
+      }
+    }
+  }
+
+  // Boss floor with boss dead → descend ASAP (handled in 6b below)
 
   // 2a. Pre-boss floor preparation (on F4/F9/F14 etc.)
   if (approachingBossFloor) {
@@ -1005,95 +1162,13 @@ export function decideAction(
     }
   }
 
-  // 2b. ON BOSS FLOOR: seek and destroy — don't leave without killing the boss
-  //    Only descend if critically low on resources (HP<30% starving) or boss is already dead
-  if (onBossFloor && bossVisible) {
-    // Boss-specific combat: prioritize boss over regular enemies
-    if (nearestBoss) {
-      const bossDist = Math.abs(nearestBoss.pos.x - px) + Math.abs(nearestBoss.pos.y - py);
-
-      // Adjacent to boss — full combat rotation
-      if (bossDist <= 1) {
-        // Warrior: WarCry if not active, then melee
-        if (player.class === CharacterClass.Warrior) {
-          if (skillCooldowns[1] <= 0 && player.mp >= 8) {
-            const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
-            if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
-          }
-          // Whirlwind if available and boss has minions nearby
-          if (adjEnemyCount >= 2 && skillCooldowns[2] <= 0 && player.mp >= 10) {
-            return { type: 'useSkill', itemIndex: 2 };
-          }
-          // Heal if HP < 40% during boss fight
-          if (player.hp < Math.floor(player.maxHp * 0.4)) {
-            const potionIdx = findHealingPotion(player);
-            if (potionIdx >= 0) return { type: 'useItem', itemIndex: potionIdx };
-          }
-          return { type: 'move', dx: nearestBoss.pos.x - px, dy: nearestBoss.pos.y - py };
-        }
-        // Mage: IceShield if not active, then melee (boss is adjacent — can't kite)
-        if (player.class === CharacterClass.Mage) {
-          if (skillCooldowns[1] <= 0 && player.mp >= 6) {
-            const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
-            if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
-          }
-          if (player.hp < Math.floor(player.maxHp * 0.4)) {
-            const potionIdx = findHealingPotion(player);
-            if (potionIdx >= 0) return { type: 'useItem', itemIndex: potionIdx };
-          }
-          return { type: 'move', dx: nearestBoss.pos.x - px, dy: nearestBoss.pos.y - py };
-        }
-        // Rogue: PoisonBlade if not active, then melee
-        if (player.class === CharacterClass.Rogue) {
-          if (skillCooldowns[1] <= 0 && player.mp >= 4) {
-            const hasPoisonBlade = player.statusEffects.some(e => e.type === StatusEffectType.PoisonBlade);
-            if (!hasPoisonBlade) return { type: 'useSkill', itemIndex: 1 };
-          }
-          if (player.hp < Math.floor(player.maxHp * 0.4)) {
-            const potionIdx = findHealingPotion(player);
-            if (potionIdx >= 0) return { type: 'useItem', itemIndex: potionIdx };
-          }
-          return { type: 'move', dx: nearestBoss.pos.x - px, dy: nearestBoss.pos.y - py };
-        }
-      }
-
-      // Boss at range — move toward it (Mage: cast at range first)
-      if (player.class === CharacterClass.Mage && bossDist <= 5 && skillCooldowns[0] <= 0 && player.mp >= 7) {
-        return { type: 'useSkill', itemIndex: 0 }; // Fireball on boss
-      }
-      if (player.class === CharacterClass.Mage && bossDist <= 6 && skillCooldowns[2] <= 0 && player.mp >= 10) {
-        return { type: 'useSkill', itemIndex: 2 }; // ChainLightning on boss
-      }
-
-      // Move toward boss
-      const path = bfsToTarget(px, py, nearestBoss.pos.x, nearestBoss.pos.y, isWalkableForBFS, w, h, map);
-      if (path) return { type: 'move', dx: path.dx, dy: path.dy };
-    }
-  }
-
-  // On boss floor but boss not visible — prioritize exploration over descent
-  // Don't skip boss unless critically endangered
-  if (onBossFloor && !bossVisible) {
-    // Allow descent only if critically low on resources
-    const criticallyEndangered = player.hp < Math.floor(player.maxHp * 0.3) ||
-      (player.hunger <= 0 && !player.inventory.some(i => i.type === ItemType.Food));
-    if (!criticallyEndangered) {
-      // Boss floor exploration: actively seek unexplored rooms by finding doors/elite doors
-      const doorTarget = findNearestTile(
-        px, py,
-        (x, y) => map[y]?.[x]?.type === ('door' as TileType) || map[y]?.[x]?.type === ('eliteDoor' as TileType),
-        isWalkableForBFS, w, h, map
-      );
-      if (doorTarget && (doorTarget.x !== px || doorTarget.y !== py)) {
-        const path = bfsToTarget(px, py, doorTarget.x, doorTarget.y, isWalkableForBFS, w, h, map);
-        if (path) return { type: 'move', dx: path.dx, dy: path.dy };
-      }
-      // Fall through to normal exploration
-    }
-  }
-
   // ---- 3. COMBAT WITH VISIBLE ENEMIES ----
+  // overdueOnFloor: on floor too long without adjacent threat — skip pursuit, prioritize descent
+  const overdueOnFloor = turnOnFloor > 100 && !onBossFloor && !bossVisible;
 
+  // On boss floor with boss visible: section 2 already handles all boss combat
+  // Skip section 3 entirely to avoid oscillation between boss-seeking and enemy-chasing
+  if (!(onBossFloor && bossVisible)) {
   if (visibleEnemies8.length > 0) {
 
     // ---- 3a. SIEGE ESCAPE (3+ adjacent enemies) — use CreatePortal or desperate measures ----
@@ -1122,10 +1197,13 @@ export function decideAction(
         const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
         if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
       }
-      // Mage: IceShield before engaging (if no DefenseUp active) — only if enemies are close enough to threaten
+      // Mage: IceShield before engaging — only when HP is low or no attack skills ready
+      // (Don't waste turns refreshing IceShield when Fireball/ChainLightning are available)
       if (player.class === CharacterClass.Mage && skillCooldowns[1] <= 0 && player.mp >= 6) {
         const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
-        if (!hasDefUp && visibleEnemies5.length > 0) return { type: 'useSkill', itemIndex: 1 };
+        const hasAttackSkill = (skillCooldowns[0] <= 0 && player.mp >= 7) || (skillCooldowns[2] <= 0 && player.mp >= 10);
+        const mageHpRatio = player.hp / Math.max(1, player.maxHp);
+        if (!hasDefUp && visibleEnemies5.length > 0 && (mageHpRatio < 0.5 || !hasAttackSkill)) return { type: 'useSkill', itemIndex: 1 };
       }
       // Rogue: PoisonBlade before engaging
       if (player.class === CharacterClass.Rogue && skillCooldowns[1] <= 0 && player.mp >= 4) {
@@ -1163,15 +1241,14 @@ export function decideAction(
       const hpRatio = player.hp / Math.max(1, player.maxHp);
       const meleeDamage = Math.floor((player.stats?.str ?? 3) * 0.5) + ((player.equipment[EquipmentSlot.Weapon] as any)?.damage ?? 0);
       const noSkillsAvailable = (skillCooldowns[0] > 0 || player.mp < 7) && (skillCooldowns[1] > 0 || player.mp < 6) && (skillCooldowns[2] > 0 || player.mp < 10);
+      const noManaPotions = findManaPotion(player) < 0;
+      // Out of MP with no way to replenish — commit to melee
+      const outOfMana = player.mp < 7 && noManaPotions;
 
       // Adjacent enemy: decide between kiting, fighting, or fleeing
       if (adjEnemy) {
         // Damage harvesting: enemy HP < 30% → stop kiting, stand and finish
         if (adjEnemy.hp < Math.floor((adjEnemy as any).maxHp * 0.3) || adjEnemy.hp <= meleeDamage) {
-          if (skillCooldowns[1] <= 0 && player.mp >= 6) {
-            const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
-            if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
-          }
           return { type: 'move', dx: adjEnemy.pos.x - px, dy: adjEnemy.pos.y - py };
         }
 
@@ -1188,21 +1265,36 @@ export function decideAction(
           return { type: 'move', dx: adjEnemy.pos.x - px, dy: adjEnemy.pos.y - py };
         }
 
-        // Low MP or no skills: commit to melee instead of kiting forever
-        if (mpRatio < 0.3 || noSkillsAvailable) {
-          const healIdx = findHealingPotion(player);
-          if (healIdx >= 0 && hpRatio < 0.5) return { type: 'useItem', itemIndex: healIdx };
+        // Out of MP with no mana potion — commit to melee immediately
+        if (outOfMana) {
           return { type: 'move', dx: adjEnemy.pos.x - px, dy: adjEnemy.pos.y - py };
         }
 
-        // Kite when possible and HP moderate — but NOT if stuck in a ping-pong loop
+        // Kite with skill attacks: attack first, retreat second
         if (canKite && hpRatio > 0.5 && !stuckInLoop) {
+          // Use attack skills on adjacent/nearby enemy BEFORE retreating
+          // ChainLightning on adjacent boss/elite or 2+ enemies
+          if (skillCooldowns[2] <= 0 && player.mp >= 10) {
+            const bossAdjacent = adjEnemy.isBoss || (adjEnemy as any).isElite;
+            const adjCount = getAdjacentEnemiesCount(player, enemies);
+            if (bossAdjacent || adjCount >= 2) {
+              return { type: 'useSkill', itemIndex: 2 };
+            }
+          }
+          // Fireball on adjacent enemy (in range 5, adjacent is always in range)
+          if (skillCooldowns[0] <= 0 && player.mp >= 7) {
+            return { type: 'useSkill', itemIndex: 0 };
+          }
+          // Combat scroll as attack during kite
+          const scrollIdx = findCombatScroll(player);
+          if (scrollIdx >= 0 && hpRatio > 0.5) return { type: 'useItem', itemIndex: scrollIdx };
+          // No attack skills ready — retreat to create distance
           const retreatDir = getRetreatDirection(player, enemies, isWalkable, w, h);
           if (retreatDir) return retreatDir;
         }
 
-        // Can't kite or can't retreat — defensive chain
-        if (skillCooldowns[1] <= 0 && player.mp >= 6) {
+        // Can't kite or can't retreat — defensive then melee
+        if (hpRatio < 0.5 && skillCooldowns[1] <= 0 && player.mp >= 6) {
           const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
           if (!hasDefUp) return { type: 'useSkill', itemIndex: 1 };
         }
@@ -1215,7 +1307,7 @@ export function decideAction(
         // Melee as last resort
       }
 
-      // Ranged skills — prioritize based on situation
+      // Ranged skills — attack from skill range while kiting
       const enemiesInRange6 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 6);
       const enemiesInRange5 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 5);
 
@@ -1227,16 +1319,9 @@ export function decideAction(
         }
       }
 
-      // Fireball: groups or tough enemies
+      // Fireball: use aggressively on any enemy in range (skill range is the kite distance)
       if (enemiesInRange5.length >= 1 && skillCooldowns[0] <= 0 && player.mp >= 7) {
-        const weakestInRange = enemiesInRange5.reduce((a, b) => a.hp <= b.hp ? a : b);
-        if (weakestInRange.hp > meleeDamage * 2 || enemiesInRange5.length >= 2) {
-          return { type: 'useSkill', itemIndex: 0 };
-        }
-        // Aggressive: use Fireball even on weak enemies if MP is plentiful
-        if (mpRatio > 0.6) {
-          return { type: 'useSkill', itemIndex: 0 };
-        }
+        return { type: 'useSkill', itemIndex: 0 };
       }
 
       // Combat scroll at range
@@ -1249,6 +1334,21 @@ export function decideAction(
       if (mpRatio <= 0.2) {
         const manaIdx = findManaPotion(player);
         if (manaIdx >= 0) return { type: 'useItem', itemIndex: manaIdx };
+      }
+
+      // Out of MP with no mana potion — move toward enemy for melee
+      if (outOfMana && visibleEnemies5.length > 0) {
+        const target = findNearestVisibleEnemy(player, enemies, visibleTiles, 8);
+        if (target) {
+          const path = bfsToTarget(px, py, target.pos.x, target.pos.y, isWalkableForBFS, w, h, map);
+          if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+        }
+      }
+
+      // Skills on cooldown but MP available — retreat to kite distance (skip when overdue)
+      if (canKite && !outOfMana && visibleEnemies5.length > 0 && !overdueOnFloor) {
+        const retreatDir = getRetreatDirection(player, enemies, isWalkable, w, h);
+        if (retreatDir) return retreatDir;
       }
 
       // No ranged skills available and no adjacent enemy: move toward nearest enemy for melee
@@ -1287,9 +1387,12 @@ export function decideAction(
       return { type: 'move', dx: adjEnemy.pos.x - px, dy: adjEnemy.pos.y - py };
     }
 
-    // ---- 3g. MOVE TOWARD VISIBLE ENEMY (if healthy and not outmatched) ----
-    if (player.hp > Math.floor(player.maxHp * 0.4) && player.hunger > 30) {
-      const target = findNearestVisibleEnemy(player, enemies, visibleTiles, 12);
+    // ---- 3g. MOVE TOWARD VISIBLE ENEMY (limited chase — don't chase fleeing enemies forever) ----
+    // When overdue on floor, skip pursuit entirely — go find stairs instead
+    if (player.hp > Math.floor(player.maxHp * 0.4) && player.hunger > 30 && !overdueOnFloor) {
+      // Reduce chase range as time on floor increases — descent is more important
+      const maxChaseFloor = turnOnFloor > 60 ? 6 : 12;
+      const target = findNearestVisibleEnemy(player, enemies, visibleTiles, maxChaseFloor);
       if (target) {
         const dist = Math.abs(target.pos.x - px) + Math.abs(target.pos.y - py);
         // Avoid elite enemies when HP is below 60% (they hit much harder)
@@ -1299,14 +1402,14 @@ export function decideAction(
           const healIdx = findHealingPotion(player);
           if (healIdx >= 0) return { type: 'useItem', itemIndex: healIdx };
           // Skip this target, look for non-elite
-          const nonElite = findNearestVisibleEnemy(player, enemies.filter(e => !(e as any).isElite), visibleTiles, 12);
+          const nonElite = findNearestVisibleEnemy(player, enemies.filter(e => !(e as any).isElite), visibleTiles, maxChaseFloor);
           if (nonElite) {
             const nePath = bfsToTarget(px, py, nonElite.pos.x, nonElite.pos.y, isWalkableForBFS, w, h, map);
             if (nePath) return { type: 'move', dx: nePath.dx, dy: nePath.dy };
           }
           // No non-elite visible — don't chase, fall through to navigation
         } else {
-          // Mage: don't chase enemies beyond fireball range + 1 (avoid kiting stalemate)
+          // Mage: chase only within attack range (skills are ranged, no need to get closer)
           const maxChaseRange = player.class === CharacterClass.Mage ? 6 : 12;
           if (dist <= maxChaseRange) {
             const path = bfsToTarget(px, py, target.pos.x, target.pos.y, isWalkableForBFS, w, h, map);
@@ -1316,6 +1419,7 @@ export function decideAction(
       }
     }
   }
+  } // end if (!(onBossFloor && bossVisible)) — skip section 3 on boss floor when boss visible
 
   // ---- 4. PICK UP ITEM AT FEET ----
   const itemHere = items.find(it => it.pos.x === px && it.pos.y === py);
@@ -1390,10 +1494,17 @@ export function decideAction(
 
   // ---- 6. NAVIGATION ----
 
-  // 6a. Open adjacent doors (always, even during exploration/combat)
-  // But don't spam openDoor if we're stuck in a loop (door might be blocked)
+  // 6a. Open adjacent doors — always try, especially when stuck (doors are the escape from loops)
+  // For regular doors: use openDoor action (gameStore.openDoor handles them)
+  // For elite doors: use move action (gameStore.movePlayer handles them in !walkable branch)
   const doorDir = findAdjacentDoor(px, py, map, w, h);
-  if (doorDir && !stuckInLoop) return { type: 'openDoor', dx: doorDir.dx, dy: doorDir.dy };
+  if (doorDir) {
+    const targetTile = map[py + doorDir.dy]?.[px + doorDir.dx];
+    if (targetTile?.type === ('eliteDoor' as TileType)) {
+      return { type: 'move', dx: doorDir.dx, dy: doorDir.dy };
+    }
+    return { type: 'openDoor', dx: doorDir.dx, dy: doorDir.dy };
+  }
 
   // 6b. Descend stairs if on them
   const currentTile = map[py]?.[px];
@@ -1403,14 +1514,36 @@ export function decideAction(
 
   if (currentTile?.type === ('stairsDown' as TileType)) {
     const aliveNearby = enemies.filter(e => e.hp > 0 && isEnemyVisible(e, visibleTiles) && Math.abs(e.pos.x - px) + Math.abs(e.pos.y - py) < 6);
-    // On boss floor: only descend if boss is dead (no boss visible) AND critically endangered or spent enough time
+    // On boss floor: only descend if boss is dead
     if (onBossFloor) {
       const bossStillAlive = enemies.some(e => e.hp > 0 && e.isBoss);
-      const criticallyEndangered = player.hp < Math.floor(player.maxHp * 0.3) ||
+      const criticallyEndangered = player.hp <= Math.floor(player.maxHp * 0.2) ||
         (player.hunger <= 0 && !player.inventory.some(i => i.type === ItemType.Food));
       if (bossStillAlive && !criticallyEndangered) {
-        // Don't descend — go back and find the boss
-        // (fall through to exploration logic)
+        // Boss alive — must find and kill it, don't descend
+        // Move AWAY from stairs to avoid re-triggering descend each turn
+        const boss = enemies.find(e => e.hp > 0 && e.isBoss);
+        if (boss) {
+          const path = bfsToTarget(px, py, boss.pos.x, boss.pos.y, isWalkableForBFS, w, h, map);
+          if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+        }
+        // Can't path to boss — move to any walkable non-stairs tile
+        const awayDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+        for (const [ddx, ddy] of awayDirs) {
+          const nx = px + ddx, ny = py + ddy;
+          if (ny >= 0 && ny < h && nx >= 0 && nx < w && isWalkable(nx, ny) && map[ny]?.[nx]?.type !== ('stairsDown' as TileType)) {
+            return { type: 'move', dx: ddx, dy: ddy };
+          }
+        }
+        // All adjacent tiles are stairs or unwalkable — try opening a door
+        for (const [ddx, ddy] of awayDirs) {
+          const nx = px + ddx, ny = py + ddy;
+          if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+            const t = map[ny]?.[nx]?.type as string;
+            if (t === 'door') return { type: 'openDoor', dx: ddx, dy: ddy };
+            if (t === 'eliteDoor') return { type: 'move', dx: ddx, dy: ddy };
+          }
+        }
       } else {
         // Boss dead or critically endangered — descend
         return { type: 'descend' };
@@ -1423,10 +1556,11 @@ export function decideAction(
     }
   }
 
-  // 6c. Move toward stairs if appropriate
-  // On boss floors, skip stairs-seeking until turnOnFloor > 120 (explore for boss first)
-  const stairsSeekThreshold = onBossFloor ? 120 : 30;
-  if (turnOnFloor > 5 && (turnOnFloor > stairsSeekThreshold || lowHungerNoFood)) {
+  // 6c. Move toward stairs — descent is a high priority
+  // Skip on boss floor if boss still alive (must kill boss first)
+  const bossStillAliveOnBossFloor = onBossFloor && enemies.some(e => e.hp > 0 && e.isBoss);
+  const stairsSeekThreshold = onBossFloor ? 120 : 20;
+  if (!bossStillAliveOnBossFloor && turnOnFloor > 5 && (turnOnFloor > stairsSeekThreshold || lowHungerNoFood)) {
     const stairsPath = findNearestTile(
       px, py,
       (x, y) => map[y]?.[x]?.type === ('stairsDown' as TileType),
@@ -1506,8 +1640,22 @@ export function decideAction(
     if (path) return { type: 'move', dx: path.dx, dy: path.dy };
   }
 
-  // 6g. STUCK ESCAPE: if detected in loop, force least-visited direction
+  // 6g. STUCK ESCAPE: if detected in loop, find doors or force least-visited direction
   if (stuckInLoop) {
+    // Priority 1: seek any door on the map (including remembered/unseen) — doors lead to new areas
+    const doorTarget = findNearestTile(
+      px, py,
+      (x, y) => {
+        const t = map[y]?.[x]?.type as string;
+        return t === 'door' || t === 'eliteDoor';
+      },
+      isWalkableForBFS, w, h, map
+    );
+    if (doorTarget && (doorTarget.x !== px || doorTarget.y !== py)) {
+      const path = bfsToTarget(px, py, doorTarget.x, doorTarget.y, isWalkableForBFS, w, h, map);
+      if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+    }
+    // Priority 2: force least-visited direction
     const escapeDir = getLeastVisitedDirection(px, py, currentFloor, isWalkable, w, h);
     if (escapeDir) return { type: 'move', dx: escapeDir.dx, dy: escapeDir.dy };
   }
@@ -1524,10 +1672,30 @@ export function decideAction(
       const path = bfsToTarget(px, py, stairsTarget.x, stairsTarget.y, isWalkableForBFS, w, h, map);
       if (path) return { type: 'move', dx: path.dx, dy: path.dy };
     }
+    // BFS to stairs failed — try aggressive door seeking to find path to new areas
+    const anyDoor = findNearestTile(
+      px, py,
+      (x, y) => {
+        const t = map[y]?.[x]?.type as string;
+        return t === 'door' || t === 'eliteDoor';
+      },
+      (x, y) => {
+        // Ultra-permissive walkable: allow any non-wall tile
+        if (y < 0 || y >= h || x < 0 || x >= w) return false;
+        const tile = map[y]?.[x];
+        if (!tile) return false;
+        return true; // Try to path through anything
+      }, w, h, map
+    );
+    if (anyDoor) {
+      const path = bfsToTarget(px, py, anyDoor.x, anyDoor.y, isWalkableForBFS, w, h, map);
+      if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+    }
   }
 
   // 6i. Fallback: BFS to least-visited walkable tile (not random walk)
   // This prevents the AI from aimlessly wandering in already-explored areas
+  // Use isWalkableForBFS to allow traversing doors toward unexplored areas
   const fallbackDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
   {
     // Find the nearest walkable tile that has been visited the fewest times
@@ -1552,7 +1720,7 @@ export function decideAction(
       for (const [ddx, ddy] of fallbackDirs) {
         const nx = cur.x + ddx, ny = cur.y + ddy;
         const nKey = `${nx},${ny}`;
-        if (nx >= 0 && nx < w && ny >= 0 && ny < h && !bfsVisited.has(nKey) && isWalkable(nx, ny)) {
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h && !bfsVisited.has(nKey) && isWalkableForBFS(nx, ny)) {
           bfsVisited.add(nKey);
           bfsQueue.push({ x: nx, y: ny });
         }
@@ -1566,11 +1734,17 @@ export function decideAction(
   }
 
   // 6j. Ultimate fallback: non-repeating random walk
+  // When extremely stuck (>400 turns), also try walking into doors/walls
+  // to discover hidden paths through openDoor side-effects
   const shuffled = [...fallbackDirs].sort(() => rng.next() - 0.5);
   for (const [ddx, ddy] of shuffled) {
     const nx = px + ddx, ny = py + ddy;
-    if (ny >= 0 && ny < h && nx >= 0 && nx < w && isWalkable(nx, ny)) {
-      return { type: 'move', dx: ddx, dy: ddy };
+    if (ny >= 0 && ny < h && nx >= 0 && nx < w) {
+      const tile = map[ny]?.[nx];
+      // Always try walkable tiles; when desperate (>400 turns), also try doors/walls
+      if (tile && (tile.walkable || turnOnFloor > 400)) {
+        return { type: 'move', dx: ddx, dy: ddy };
+      }
     }
   }
 

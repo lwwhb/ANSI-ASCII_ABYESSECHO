@@ -135,7 +135,7 @@ The project includes an automated gameplay simulation engine for balance testing
 ### Architecture
 - `simulation/mock-browser.ts` — Browser API mocks (localStorage, AudioContext, DOM) for Node.js execution
 - `simulation/ai-player.ts` — AI decision engine: BFS exploration, equipment auto-equip/upgrade, scroll/potion tactics, shop strategy, class-specific skill/talent/blessing selection
-- `simulation/statistics.ts` — Per-floor snapshots, death tracking, equipment power curves, formatted report generation
+- `simulation/statistics.ts` — Per-floor snapshots, death tracking, equipment power curves, formatted report generation. v4 metrics: floor reached percentiles (P25/P50/P75/P90), damage efficiency (dealt/taken), death HP% (猝死程度), hunger stress (饿死率+归零回合), per-floor avg turns/level/kills
 - `simulation/run.ts` — Main runner: multi-class × multi-run orchestration, CLI args
 
 ### AI Player Coverage
@@ -171,6 +171,25 @@ npx tsx simulation/run.ts --runs=10 --floors=30          # High-sample balance t
 
 Output: terminal report + `simulation/simulation-report.txt` with HP/gold/equipment curves, death cause distribution, and balance analysis.
 
+### Report Metrics (v4)
+
+**Per-class summary** includes:
+- Basic: runs, avg death floor, max floor reached, survival rate
+- **Floor reached percentiles** (P25/P50/P75/P90) — more robust than averages against outliers
+- **Damage efficiency** (dealt÷taken) — overall attack/defense ratio per class
+- **Death HP%** — avg HP% at moment of death; 0% = instant kills, high% = attrition deaths
+- **Hunger stress** — % of runs dying to hunger + avg turn when hunger hit 0
+- Per-floor charts: HP, MP, gold, equipment power, survival rate, **avg turns**, **avg level**, **avg kills**
+- Death cause distribution, death floor histogram, resource usage, bugs
+
+**Balance analysis** cross-class comparisons:
+- HP ranges, survival rates, key-floor HP/survival comparisons
+- **Floor reached percentile comparison**
+- **Death HP% comparison** (instant-kill severity)
+- **Damage efficiency comparison** (flags if >2x gap between classes)
+- **Hunger stress comparison**
+- Auto-flags: class too weak (avg death floor < 5 + survival < 30%), instant-kill risk (death HP% < 15%), hunger too harsh (> 30%), damage efficiency gap (> 2x)
+
 ## Combat System
 
 ### Multiplicative Defense Formula
@@ -187,6 +206,13 @@ Output: terminal report + `simulation/simulation-report.txt` with HP/gold/equipm
 ### Boss Design Philosophy
 - DPS race design: later bosses have lower DEF but much higher ATK, creating urgency
 - Abyss King: ATK 38, DEF 10 — player must kill in ~13 turns or die
+
+### Boss Floor Descent Lock
+- Boss floors (5/10/15/20/25/30): `descendStairs()` checks if any Boss with `hp > 0 && isBoss` exists
+- Boss alive → stairs blocked with message "深渊迷雾遮蔽了前路……击败本层主宰方可驱散"
+- Extreme danger escape: HP ≤ 20% maxHp OR (hunger ≤ 0 AND no food) → allowed to descend but player receives `deserter: true` flag
+- Deserter penalty: `checkLevelUp()` uses `expToNext * 1.5` instead of `expToNext`; displayed as red EXP bar + "逃亡者：升级经验+50%" in StatsPanel
+- `deserter` is a permanent boolean on `Player` — persists through save/load, resets on new game
 
 ## Known Design Notes
 

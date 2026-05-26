@@ -8,7 +8,7 @@ setupBrowserMocks();
 import { useGameStore } from '../src/store/gameStore.js';
 import { CharacterClass, TileType, GamePhase, ItemType, BossBlessing, EquipmentSlot } from '../src/types/index.js';
 import { SeededRandom } from '../src/utils/random.js';
-import { decideAction, type AIAction, resetVisitedPositions } from './ai-player.js';
+import { decideAction, type AIAction, resetVisitedPositions, markEquipFailed } from './ai-player.js';
 import { type RunResult, type FloorSnapshot, type BugReport, computeClassSummary, formatReport } from './statistics.js';
 
 // ============================================================
@@ -312,12 +312,19 @@ function executeAction(store: any, action: AIAction) {
   const s = store.getState();
 
   // Auto-convert move actions targeting a closed door into openDoor
+  // Also handle eliteDoor which gameStore.openDoor() doesn't handle natively
   if (action.type === 'move') {
     const dx = action.dx ?? 0, dy = action.dy ?? 0;
     const px = s.player?.pos?.x ?? 0, py = s.player?.pos?.y ?? 0;
     const targetTile = s.map?.[py + dy]?.[px + dx];
-    if (targetTile?.type === 'door' || targetTile?.type === 'eliteDoor') {
+    if (targetTile?.type === 'door') {
       s.openDoor(dx, dy);
+      return;
+    }
+    // eliteDoor: openDoor() only handles Door, use movePlayer() which has eliteDoor logic
+    if (targetTile?.type === 'eliteDoor') {
+      // movePlayer handles eliteDoor in its !walkable branch — just use it directly
+      s.movePlayer(dx, dy);
       return;
     }
   }
@@ -388,6 +395,10 @@ function runSingleSimulation(className: CharacterClass, runIndex: number, maxFlo
   // Phase tracking for stuck detection
   let currentPhaseStartTurn = 0;
   let lastPhase = '';
+
+  // Action trace ring buffer — last N actions for stuck diagnosis
+  const TRACE_SIZE = 80;
+  const actionTrace: string[] = [];
 
   try {
     // Use restartGame() for proper state cleanup
@@ -475,6 +486,7 @@ function runSingleSimulation(className: CharacterClass, runIndex: number, maxFlo
         floorDmgTaken = 0;
         floorDmgDealt = 0;
         turnOnFloor = 0;
+        actionTrace.length = 0; // reset trace on floor change
         prevBossKillCount = state.player?.bossKillCount ?? 0;
         prevHp = state.player?.hp ?? 0;
         prevGold = state.player?.gold ?? 0;
@@ -567,10 +579,36 @@ function runSingleSimulation(className: CharacterClass, runIndex: number, maxFlo
         consecutiveSameAction = 0;
         lastActionDetail = actionDetail;
       }
-      // Early intervention: if same action repeated 8+ times, replace with wait to break the loop
+      // Early intervention: if same action repeated 8+ times, break the loop
+      // Replacing with 'wait' just wastes turns — try random walkable direction instead
       let effectiveAction = action;
-      if (consecutiveSameAction >= 8 && (action.type === 'move' || action.type === 'openDoor')) {
-        effectiveAction = { type: 'wait' };
+      if (consecutiveSameAction >= 8 && (action.type === 'move' || action.type === 'openDoor' || action.type === 'useSkill' || action.type === 'equip')) {
+        if (action.type === 'useSkill') {
+          effectiveAction = { type: 'wait' };
+        } else if (action.type === 'equip') {
+          // Equip loop — mark as failed and wait to break the loop
+          markEquipFailed(`${action.itemIndex ?? ''}:${action.targetSlot ?? ''}:${state.player?.inventory?.[action.itemIndex ?? -1]?.name ?? ''}`);
+          effectiveAction = { type: 'wait' };
+        } else {
+          const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+          const px = state.player?.pos?.x ?? 0, py = state.player?.pos?.y ?? 0;
+          const mw = state.width ?? 70, mh = state.height ?? 24;
+          const walkableDirs = dirs.filter(([ddx, ddy]) => {
+            const nx = px + ddx, ny = py + ddy;
+            if (nx < 0 || nx >= mw || ny < 0 || ny >= mh) return false;
+            const t = state.map?.[ny]?.[nx];
+            return t && (t.walkable || t.type === 'door' || t.type === 'eliteDoor');
+          });
+          if (walkableDirs.length > 0) {
+            // Pick a direction different from the stuck one
+            const stuckDx = action.dx ?? 0, stuckDy = action.dy ?? 0;
+            const alternatives = walkableDirs.filter(([ddx, ddy]) => ddx !== stuckDx || ddy !== stuckDy);
+            const pick = alternatives.length > 0 ? alternatives[Math.floor(Math.random() * alternatives.length)] : walkableDirs[Math.floor(Math.random() * walkableDirs.length)];
+            effectiveAction = { type: 'move', dx: pick[0], dy: pick[1] };
+          } else {
+            effectiveAction = { type: 'wait' };
+          }
+        }
         consecutiveSameAction = 0;
       }
       if (consecutiveSameAction >= REPEAT_THRESHOLD) {
@@ -643,6 +681,12 @@ function runSingleSimulation(className: CharacterClass, runIndex: number, maxFlo
       totalTurns++;
       result.totalTurns = totalTurns;
 
+      // Record action trace for stuck diagnosis
+      const s2 = store.getState();
+      const traceEntry = `F${state.currentFloor}T${turnOnFloor} raw=${action.type}:${action.dx ?? ''},${action.dy ?? ''} eff=${effectiveAction.type}:${effectiveAction.dx ?? ''},${effectiveAction.dy ?? ''} pos=${s2.player?.pos?.x},${s2.player?.pos?.y} hp=${s2.player?.hp} hng=${s2.player?.hunger} phase=${s2.phase} bless=${s2.bossBlessingPending} enemies=${s2.enemies?.filter((e: any) => e.hp > 0).length}`;
+      actionTrace.push(traceEntry);
+      if (actionTrace.length > TRACE_SIZE) actionTrace.shift();
+
       // Progress output every 100 turns
       if (totalTurns % 100 === 0) {
         process.stdout.write('.');
@@ -650,11 +694,34 @@ function runSingleSimulation(className: CharacterClass, runIndex: number, maxFlo
 
       // Safety: prevent infinite loops per floor
       if (turnOnFloor > MAX_TURNS_PER_FLOOR) {
+        // Build environment snapshot for root cause analysis
+        const envSnap: string[] = [];
+        const p = state.player;
+        const m = state.map;
+        if (p && m) {
+          envSnap.push(`player=(${p.pos.x},${p.pos.y}) floor=${state.currentFloor} stairs=${state.stairsPos ? `(${state.stairsPos.x},${state.stairsPos.y})` : '?'}`);
+          // 5x5 area around player
+          for (let dy = -2; dy <= 2; dy++) {
+            const row: string[] = [];
+            for (let dx = -2; dx <= 2; dx++) {
+              const tx = p.pos.x + dx, ty = p.pos.y + dy;
+              if (dx === 0 && dy === 0) { row.push('@'); continue; }
+              if (ty < 0 || ty >= m.length || tx < 0 || tx >= m[0].length) { row.push('#'); continue; }
+              const tile = m[ty][tx];
+              if (!tile) { row.push('?'); continue; }
+              const enemy = state.enemies?.find((e: any) => e.hp > 0 && e.pos.x === tx && e.pos.y === ty);
+              if (enemy) { row.push('E'); continue; }
+              if (tile.walkable) { row.push('.'); continue; }
+              row.push(tile.type?.toString()?.slice(0, 3) ?? '?');
+            }
+            envSnap.push(row.join(''));
+          }
+        }
         result.errors.push(`F${state.currentFloor}: 超过${MAX_TURNS_PER_FLOOR}回合，强制结束`);
         result.bugs.push({
           severity: 'warning',
           category: 'AI卡死',
-          detail: `F${state.currentFloor} 超过${MAX_TURNS_PER_FLOOR}回合未下楼 (phase=${state.phase})`,
+          detail: `F${state.currentFloor} 超过${MAX_TURNS_PER_FLOOR}回合未下楼 (phase=${state.phase})\nENV:\n${envSnap.join('\n')}\nTRACE:\n${actionTrace.join('\n')}`,
           turn: turnOnFloor,
           floor: state.currentFloor,
           lastAction: lastActionType,
@@ -775,6 +842,9 @@ async function main() {
       survivalByFloor: Object.fromEntries(s.survivalByFloor ?? []),
       deathCauseCount: Object.fromEntries(s.deathCauseCount),
       deathFloorDistribution: Object.fromEntries(s.deathFloorDistribution),
+      avgTurnsByFloor: Object.fromEntries(s.avgTurnsByFloor ?? []),
+      avgLevelByFloor: Object.fromEntries(s.avgLevelByFloor ?? []),
+      avgKillsByFloor: Object.fromEntries(s.avgKillsByFloor ?? []),
     }));
     const jsonPath = path.join(import.meta.dirname ?? '.', 'simulation-report.json');
     fs.writeFileSync(jsonPath, JSON.stringify(jsonFriendly, null, 2), 'utf-8');
