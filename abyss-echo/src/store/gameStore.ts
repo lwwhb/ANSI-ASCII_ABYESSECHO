@@ -18,9 +18,9 @@ import { hasRelic, getRelicAtkModifier, getRelicGoldModifier,
          rollRandomRelic } from '../engine/RelicEffects';
 import { checkChainReactionWithMap, getEnemyElementDebuffs, executeChainReaction } from '../engine/ElementalChain';
 import { createScroll } from '../entities/Items';
-import { createFood } from '../entities/Items';
+import { createFood, createPotion } from '../entities/Items';
 import { generateDungeon, createTile } from '../generator/DungeonGenerator';
-import { computeFOV, distance } from '../engine/FOV';
+import { computeFOV, distance, hasLineOfSight } from '../engine/FOV';
 import {
   calculateMeleeDamage, processStatusEffects, isFrozen, isConfused, applyConfusion,
   getEnemyAction, getTrapEffect, applyLevelUp, checkLevelUp, isTalentLevel,
@@ -153,7 +153,7 @@ const SAVE_FIELD_DEFAULTS: Partial<GameState> = {
   themedRooms: [],
   steamVentTurns: [],
   floatingTexts: [],
-  screenShake: 0,
+  screenShake: null,
 };
 
 function migrateSaveState(state: Record<string, unknown>): GameState {
@@ -432,7 +432,7 @@ const initialState: GameState = {
   themedRooms: [],
   steamVentTurns: [],
   floatingTexts: [],
-  screenShake: 0,
+  screenShake: null,
 };
 
 export const useGameStore = create<GameStore>((set, get) => {
@@ -517,6 +517,9 @@ export const useGameStore = create<GameStore>((set, get) => {
 
   function handlePlayerDeath(player: Player, enemies: Enemy[], messages: Message[], deathCause: string) {
     const state = get();
+
+    // Clamp HP to 0 — damage may overshoot, producing negative values
+    player.hp = Math.max(0, player.hp);
 
     // VoidHeart: prevent first death
     if (player.relics.includes(RelicId.VoidHeart) && !player.voidHeartUsed) {
@@ -738,7 +741,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     // MP regen: only in combat (enemies visible)
     const enemyInSight = enemies.some(e => e.hp > 0 && state.visibleTiles.has(`${e.pos.x},${e.pos.y}`));
     if (enemyInSight && player.mp < player.maxMp) {
-      const mpRegen = Math.max(1, Math.floor(player.stats.int / 5));
+      const mpRegen = Math.max(1, Math.floor(player.stats.int / 8));
       player.mp = Math.min(player.maxMp, player.mp + mpRegen);
     }
     // Meditation talent: additional +1 MP per turn (only in combat)
@@ -1318,9 +1321,7 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     // Age floating texts and remove those older than 2 turns
     // Floating texts are now time-based and auto-cleaned by MapView animation loop
-
-    // Decrement screen shake
-    const newScreenShake = Math.max(0, get().screenShake - 2);
+    // Screen shake is also time-based — decayed in MapView animation loop, not per-turn
 
     set({
       turn: newTurn,
@@ -1331,7 +1332,6 @@ export const useGameStore = create<GameStore>((set, get) => {
       voidCorruption,
       currentFragmentTurns,
       warningPulse,
-      screenShake: newScreenShake,
     });
     updateFOV();
 
@@ -2078,6 +2078,17 @@ export const useGameStore = create<GameStore>((set, get) => {
         player.inventory.push(createFood(1)); // 干粮 (战士/盗贼额外补给)
       }
 
+      // 初始治疗药水
+      if (charClass === CharacterClass.Warrior) {
+        const hp1 = createPotion(0); hp1.identified = true;
+        const hp2 = createPotion(0); hp2.identified = true;
+        player.inventory.push(hp1, hp2);
+      }
+      if (charClass === CharacterClass.Rogue) {
+        const hp = createPotion(0); hp.identified = true;
+        player.inventory.push(hp);
+      }
+
       set({
         phase: GamePhase.Playing,
         player,
@@ -2281,7 +2292,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             }
 
             // Screen shake for chain reaction
-            set({ screenShake: 10 });
+            set({ screenShake: { intensity: 10, createdAt: performance.now() } });
 
             // Apply status effects
             for (const se of chainResult.statusEffects) {
@@ -2340,12 +2351,12 @@ export const useGameStore = create<GameStore>((set, get) => {
 
         // Screen shake on crit
         if (result.critical) {
-          set({ screenShake: 6 });
+          set({ screenShake: { intensity: 6, createdAt: performance.now() } });
         }
 
         // Screen shake on boss hit
         if (enemy.isBoss) {
-          set({ screenShake: 8 });
+          set({ screenShake: { intensity: 8, createdAt: performance.now() } });
         }
 
         const messages: Message[] = [];
@@ -2565,6 +2576,7 @@ export const useGameStore = create<GameStore>((set, get) => {
                       dropChance: Math.max(0.1, enemy.dropChance * 0.5),
                       specialAbility: enemy.specialAbility,
                       alertRadius: enemy.alertRadius,
+                      attackRange: enemy.attackRange ?? 1,
                       isBoss: false,
                       goldDrop: Math.floor(enemy.goldDrop * 0.3),
                       bossPhase: 1,
@@ -2824,13 +2836,14 @@ export const useGameStore = create<GameStore>((set, get) => {
           const newMap = state.map.map(row => row.map(t => ({ ...t })));
           newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.Floor, char: '.', fg: '#555555', bg: 'transparent', walkable: true, transparent: true };
           set({ map: newMap });
+          AudioManager.playSFX('bump');
           addMessages([msg('你破坏了木栏！', MessageCategory.System, '#aa8844')]);
           return;
         }
         // EliteDoor (精英门): Open on interaction
         if (tile.type === TileType.EliteDoor) {
           const newMap = state.map.map(row => row.map(t => ({ ...t })));
-          newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.DoorOpen, char: '/', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true };
+          newMap[ny][nx] = { ...newMap[ny][nx], type: TileType.DoorOpen, char: '░', fg: '#ffd700', bg: 'transparent', walkable: true, transparent: true };
           set({ map: newMap });
           addMessages([msg('你推开了铁门。前方传来强大的气息…', MessageCategory.System, '#ffd700')]);
           AudioManager.playSFX('ironDoor');
@@ -3985,6 +3998,37 @@ export const useGameStore = create<GameStore>((set, get) => {
         return;
       }
 
+      // Pre-validate target requirements before consuming MP/CD
+      // Skills that require a target: shieldBash (adjacent), fireball (LOS+range), chainLightning (LOS+range), shadowStep (range), fanOfKnives (radius)
+      // Self/targetless skills: warCry, iceShield, whirlwind (hits all adjacent), poisonBlade
+      const tempEnemies = state.enemies.map(e => ({ ...e }));
+      if (skill.id === 'shieldBash') {
+        if (!tempEnemies.some(e => e.hp > 0 && distance(player.pos, e.pos) <= 1.5)) {
+          addMessages([msg('周围没有敌人！', MessageCategory.System, '#888888')]);
+          return;
+        }
+      } else if (skill.id === 'fireball') {
+        if (!tempEnemies.some(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.range && hasLineOfSight(state.map, player.pos, e.pos))) {
+          addMessages([msg('范围内没有敌人！', MessageCategory.System, '#888888')]);
+          return;
+        }
+      } else if (skill.id === 'chainLightning') {
+        if (!tempEnemies.some(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.range && hasLineOfSight(state.map, player.pos, e.pos))) {
+          addMessages([msg('范围内没有敌人！', MessageCategory.System, '#888888')]);
+          return;
+        }
+      } else if (skill.id === 'shadowStep') {
+        if (!tempEnemies.some(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.range)) {
+          addMessages([msg('范围内没有敌人！', MessageCategory.System, '#888888')]);
+          return;
+        }
+      } else if (skill.id === 'fanOfKnives') {
+        if (!tempEnemies.some(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.radius)) {
+          addMessages([msg('范围内没有敌人！', MessageCategory.System, '#888888')]);
+          return;
+        }
+      }
+
       player.mp -= skill.mpCost;
       player.skillCooldowns = [...player.skillCooldowns];
       // 装备特效：冷却缩减 — CD-1（最低1）
@@ -4004,7 +4048,6 @@ export const useGameStore = create<GameStore>((set, get) => {
 
       switch (skill.id) {
         case 'shieldBash': {
-          // Stun adjacent enemy for 2 turns
           const adjacent = enemies.filter(e => e.hp > 0 && distance(player.pos, e.pos) <= 1.5);
           if (adjacent.length > 0) {
             const target = adjacent[0];
@@ -4018,8 +4061,6 @@ export const useGameStore = create<GameStore>((set, get) => {
             messages.push(msg(critted ? `暴击！盾击！${target.name}被击退并眩晕！造成 ${bashDmg} 点伤害` : `盾击！${target.name}被击退并眩晕！造成 ${bashDmg} 点伤害`, MessageCategory.Combat, critted ? '#ffcc44' : '#ff8844'));
           } else {
             messages.push(msg('附近没有敌人！', MessageCategory.System, '#888888'));
-            player.mp += skill.mpCost; // Refund
-            player.skillCooldowns[skillIndex] = 0;
           }
           break;
         }
@@ -4030,7 +4071,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         }
         case 'whirlwind': {
           const weaponDmg = getPlayerWeaponDamage(player);
-          let whirlDmg = Math.floor(weaponDmg * 1.5 + getEffectiveStats(player).str * 0.5);
+          let whirlDmg = Math.floor(weaponDmg * 2.0 + getEffectiveStats(player).str * 0.5);
           const whirlCrit = rng.chance(skillCritChance);
           if (whirlCrit) whirlDmg = Math.floor(whirlDmg * skillCritMult);
           let hitCount = 0;
@@ -4054,28 +4095,30 @@ export const useGameStore = create<GameStore>((set, get) => {
           break;
         }
         case 'fireball': {
-          const target = enemies.filter(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.range)
+          const target = enemies.filter(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.range && hasLineOfSight(state.map, player.pos, e.pos))
             .sort((a, b) => distance(player.pos, a.pos) - distance(player.pos, b.pos))[0];
           if (target) {
-            let dmg = skill.power + Math.floor(getEffectiveStats(player).int * 0.5);
+            let rawDmg = skill.power + Math.floor(getEffectiveStats(player).int * 0.5);
             const fbCrit = rng.chance(skillCritChance);
-            if (fbCrit) dmg = Math.floor(dmg * skillCritMult);
+            if (fbCrit) rawDmg = Math.floor(rawDmg * skillCritMult);
+            const hasSpellPen = player.talents.includes('spellPenetration');
             const fbHitIds = new Set<string>();
+            let totalDmg = 0;
             enemies = enemies.map(e => {
               if (e.hp > 0 && distance(target.pos, e.pos) <= skill.radius) {
                 fbHitIds.add(e.id);
+                const effectiveDef = hasSpellPen ? Math.floor(e.defense * 0.5) : e.defense;
+                const dmg = Math.max(1, Math.floor(rawDmg * 20 / (20 + effectiveDef)));
+                totalDmg += dmg;
                 addFloatingText(e.pos.x, e.pos.y, `-${dmg}`, fbCrit ? '#ffd700' : '#ff6600', fbCrit ? 'crit' : 'damage');
                 return { ...e, hp: e.hp - dmg };
               }
               return e;
             });
-            messages.push(msg(fbCrit ? `暴击！火球术！造成 ${dmg} 点火焰伤害！` : `火球术！造成 ${dmg} 点火焰伤害！`, MessageCategory.Combat, fbCrit ? '#ffcc44' : '#ff6644'));
+            messages.push(msg(fbCrit ? `暴击！火球术！造成 ${totalDmg} 点火焰伤害！` : `火球术！造成 ${totalDmg} 点火焰伤害！`, MessageCategory.Combat, fbCrit ? '#ffcc44' : '#ff6644'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && fbHitIds.has(e2.id))) {
               player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
-          } else {
-            messages.push(msg('范围内没有敌人！', MessageCategory.System, '#888888'));
-            player.mp += skill.mpCost; player.skillCooldowns[skillIndex] = 0;
           }
           break;
         }
@@ -4087,28 +4130,30 @@ export const useGameStore = create<GameStore>((set, get) => {
           break;
         }
         case 'chainLightning': {
-          const targets = enemies.filter(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.range)
+          const targets = enemies.filter(e => e.hp > 0 && distance(player.pos, e.pos) <= skill.range && hasLineOfSight(state.map, player.pos, e.pos))
             .sort((a, b) => distance(player.pos, a.pos) - distance(player.pos, b.pos))
             .slice(0, 3);
           if (targets.length > 0) {
-            let dmg = skill.power + Math.floor(getEffectiveStats(player).int * 0.3);
+            let rawDmg = skill.power + Math.floor(getEffectiveStats(player).int * 0.3);
             const clCrit = rng.chance(skillCritChance);
-            if (clCrit) dmg = Math.floor(dmg * skillCritMult);
+            if (clCrit) rawDmg = Math.floor(rawDmg * skillCritMult);
+            const hasSpellPen = player.talents.includes('spellPenetration');
             const hitIds = new Set(targets.map(t => t.id));
+            let totalDmg = 0;
             enemies = enemies.map(e => {
               if (hitIds.has(e.id)) {
+                const effectiveDef = hasSpellPen ? Math.floor(e.defense * 0.5) : e.defense;
+                const dmg = Math.max(1, Math.floor(rawDmg * 20 / (20 + effectiveDef)));
+                totalDmg += dmg;
                 addFloatingText(e.pos.x, e.pos.y, `-${dmg}`, clCrit ? '#ffd700' : '#cccc44', clCrit ? 'crit' : 'damage');
                 return { ...e, hp: e.hp - dmg };
               }
               return e;
             });
-            messages.push(msg(clCrit ? `暴击！闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！` : `闪电链！击中 ${targets.length} 个敌人，各造成 ${dmg} 点伤害！`, MessageCategory.Combat, clCrit ? '#ffcc44' : '#cccc44'));
+            messages.push(msg(clCrit ? `暴击！闪电链！击中 ${targets.length} 个敌人，共造成 ${totalDmg} 点伤害！` : `闪电链！击中 ${targets.length} 个敌人，共造成 ${totalDmg} 点伤害！`, MessageCategory.Combat, clCrit ? '#ffcc44' : '#cccc44'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && hitIds.has(e2.id))) {
               player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
-          } else {
-            messages.push(msg('范围内没有敌人！', MessageCategory.System, '#888888'));
-            player.mp += skill.mpCost; player.skillCooldowns[skillIndex] = 0;
           }
           break;
         }
@@ -4141,9 +4186,6 @@ export const useGameStore = create<GameStore>((set, get) => {
               messages.push(msg('无法瞬移到目标身边！', MessageCategory.System, '#888888'));
               player.mp += skill.mpCost; player.skillCooldowns[skillIndex] = 0;
             }
-          } else {
-            messages.push(msg('范围内没有敌人！', MessageCategory.System, '#888888'));
-            player.mp += skill.mpCost; player.skillCooldowns[skillIndex] = 0;
           }
           break;
         }
@@ -5155,7 +5197,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         steamVentTurns: loadedState.steamVentTurns ?? [],
         pendingForge: loadedState.pendingForge ?? false,
         floatingTexts: [],
-        screenShake: 0,
+        screenShake: null,
       });
 
       // Suspend save: delete after loading to prevent save-scumming

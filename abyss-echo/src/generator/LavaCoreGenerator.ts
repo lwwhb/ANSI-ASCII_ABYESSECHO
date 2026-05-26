@@ -195,7 +195,7 @@ export function generateLavaCore(floor: number, seed: number): DungeonData {
   }
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
-  const enemies = placeEnemies(islands, floor, rng, config.enemyIds);
+  const enemies = placeEnemies(islands, floor, rng, config.enemyIds, undefined, startRoom);
   const items = placeItems(islands, floor, rng, config.itemsPerFloorBase, config.itemsPerFloorGrowth);
 
   let shopPos: Position | undefined;

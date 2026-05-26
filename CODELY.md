@@ -153,6 +153,20 @@ The AI simulates realistic player behavior across these systems:
 - **Inventory:** Drops/sells lowest-value items when full
 - **RNG:** Uses SeededRandom (not Math.random) for reproducible results
 
+### AI Distance & LOS Rules
+- **Euclidean distance** — The game's `distance()` in FOV.ts uses Euclidean distance (√(Δx²+Δy²)). AI skill range checks MUST use Euclidean distance too, NOT Manhattan distance (`|Δx|+|Δy|`)
+- **Skill ranges match game definitions** — All ranges come from `SKILL_DEFS` in constants. AI must use exact ranges, not approximations:
+  - Fireball: range=4, radius=1, needs LOS ✅
+  - ChainLightning: range=6, needs LOS ✅
+  - ShieldBash: range=1 (adjacent ≤1.5), no LOS ✅
+  - Whirlwind: radius=1 (≤1.5), no LOS ✅
+  - ShadowStep: range=6, no LOS needed ✅
+  - FanOfKnives: radius=2, no LOS ✅
+  - WarCry/IceShield/PoisonBlade: self-targeted (range=0) ✅
+- **LOS pre-check before skill use** — AI must verify both visibility (`visibleTiles`) AND clear LOS (`hasClearLOS`) before returning `useSkill` for ranged skills (fireball, chainLightning). The game's `useSkill` pre-validates range+LOS and silently rejects invalid attempts (no MP consumed, no turn advanced). If AI doesn't pre-check, it enters infinite loops of rejected skill attempts
+- **Rejected skill detection** — In `run.ts`, after executing `useSkill`, check if MP/cooldowns changed. If not, the skill was rejected by the game (no-op), and `turnOnFloor` should not be incremented since the game didn't process a turn
+- **`hasClearLOS` tile transparency** — AI's `hasClearLOS` must handle cases where `transparent` is undefined: fall back to `tile.walkable` (walkable tiles are typically transparent)
+
 ### Running Simulations
 
 ```bash

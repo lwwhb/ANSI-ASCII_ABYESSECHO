@@ -533,21 +533,34 @@ function placeHiddenRoomContent(
 }
 
 function findRoomDoor(map: Tile[][], room: Room): Position | null {
-  // Search room boundary for corridor/door connections
-  for (let y = room.y; y < room.y + room.h; y++) {
-    for (let x = room.x; x < room.x + room.w; x++) {
+  // Priority 1: Find Door/DoorOpen on room boundary (actual room entrance)
+  const doors: Position[] = [];
+  for (let y = room.y; y <= room.y + room.h; y++) {
+    for (let x = room.x; x <= room.x + room.w; x++) {
       if (y >= 0 && y < map.length && x >= 0 && x < map[0].length) {
         const t = map[y][x].type;
-        if (t === TileType.Corridor || t === TileType.Door || t === TileType.DoorOpen) {
+        if (t === TileType.Door || t === TileType.DoorOpen) {
+          doors.push({ x, y });
+        }
+      }
+    }
+  }
+  if (doors.length > 0) return doors[0];
+
+  // Priority 2: Find Corridor on room boundary
+  for (let y = room.y; y <= room.y + room.h; y++) {
+    for (let x = room.x; x <= room.x + room.w; x++) {
+      if (y >= 0 && y < map.length && x >= 0 && x < map[0].length) {
+        if (map[y][x].type === TileType.Corridor) {
           return { x, y };
         }
       }
     }
   }
-  // H10 fix: Fallback - find adjacent floor tile instead of using room boundary
-  // Check around room perimeter for a walkable tile
-  for (let y = room.y; y < room.y + room.h; y++) {
-    for (let x = room.x; x < room.x + room.w; x++) {
+
+  // Priority 3: Find any walkable tile on room boundary
+  for (let y = room.y; y <= room.y + room.h; y++) {
+    for (let x = room.x; x <= room.x + room.w; x++) {
       if (y >= 0 && y < map.length && x >= 0 && x < map[0].length && map[y][x].walkable) {
         return { x, y };
       }
@@ -722,6 +735,26 @@ export function placeEliteAndSpecialRooms(
     }
     if (!canCarve) continue;
 
+    // Additional perimeter check: ensure no walkable tile is adjacent to the hidden room boundary
+    // (except at the secret wall entrance) to prevent open connections to regular rooms
+    let perimeterClear = true;
+    for (let dy = -1; dy <= roomH && perimeterClear; dy++) {
+      for (let dx = -1; dx <= roomW && perimeterClear; dx++) {
+        // Skip interior tiles and the secret wall entrance side
+        const isInterior = dy >= 0 && dy < roomH && dx >= 0 && dx < roomW;
+        if (isInterior) continue;
+        const px = hx + dx;
+        const py = hy + dy;
+        if (px < 0 || px >= map[0].length || py < 0 || py >= map.length) continue;
+        // Skip the secret wall position and its immediate neighbors
+        if (Math.abs(px - wallPos.x) <= 1 && Math.abs(py - wallPos.y) <= 1) continue;
+        if (map[py][px].walkable) {
+          perimeterClear = false;
+        }
+      }
+    }
+    if (!perimeterClear) continue;
+
     // Carve hidden room with HiddenFloor tiles (all tiles confirmed to be Wall above)
     const roomPositions: Position[] = [];
     const d = NEW_TILE_DEFAULTS['hiddenFloor']!;
@@ -812,10 +845,12 @@ export function addEnvironment(map: Tile[][], rooms: Room[], biome: Biome, rng: 
   }
 }
 
-export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, enemyIds: string[], map?: Tile[][]): { defId: string; pos: Position; isBoss: boolean }[] {
+export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, enemyIds: string[], map?: Tile[][], startRoom?: Room): { defId: string; pos: Position; isBoss: boolean }[] {
   const count = Math.floor(ENEMIES_PER_FLOOR_BASE + ENEMIES_PER_FLOOR_GROWTH * Math.sqrt(floor));
   const enemies: { defId: string; pos: Position; isBoss: boolean }[] = [];
-  const spawnRooms = rooms.slice(1);
+  // Exclude start room so player doesn't land on enemies when descending
+  const spawnRooms = rooms.filter(r => r !== startRoom);
+  if (spawnRooms.length === 0) return enemies;
 
   // H9 fix: helper to find walkable position in room
   const findWalkablePos = (room: Room): Position | null => {

@@ -180,8 +180,9 @@ export function generateVoidAbyss(floor: number, seed: number): DungeonData {
 
   // Create Room-like objects from fragments for entity placement
   const rooms: Room[] = fragments.map(f => ({ x: f.x, y: f.y, w: f.w, h: f.h, centerX: f.centerX, centerY: f.centerY }));
-
-  const enemies = placeEnemies(rooms, floor, rng, config.enemyIds);
+  // Find the start room in the rooms array (by position, since rooms are mapped from fragments)
+  const startRoomRef = rooms.find(r => r.centerX === startFrag.centerX && r.centerY === startFrag.centerY);
+  const enemies = placeEnemies(rooms, floor, rng, config.enemyIds, undefined, startRoomRef);
   const items = placeItems(rooms, floor, rng, config.itemsPerFloorBase, config.itemsPerFloorGrowth);
 
   let shopPos: Position | undefined;

@@ -7,6 +7,8 @@ const FONT_SIZE = 14;
 const FLOAT_DURATION = 1000; // 1 second animation
 const FLOAT_CLEANUP = 1200; // remove from store after 1.2s
 const FLOAT_RISE_PX = 30; // pixels to float upward
+const SHAKE_DURATION = 400; // screen shake lasts 400ms
+const SHAKE_CLEANUP = 500; // remove from store after 500ms
 
 const MapView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -18,7 +20,6 @@ const MapView: React.FC = () => {
   const enemies = useGameStore(s => s.enemies);
   const items = useGameStore(s => s.items);
   const floatingTexts = useGameStore(s => s.floatingTexts);
-  const screenShake = useGameStore(s => s.screenShake);
 
   // Render main map to offscreen canvas when game state changes
   useEffect(() => {
@@ -167,12 +168,17 @@ const MapView: React.FC = () => {
 
     const now = performance.now();
     const currentTexts = useGameStore.getState().floatingTexts || [];
-    const shake = useGameStore.getState().screenShake || 0;
+    const shakeData = useGameStore.getState().screenShake;
 
     // Clean up expired texts
     const expired = currentTexts.some(ft => now - ft.createdAt > FLOAT_CLEANUP);
     if (expired) {
       useGameStore.setState({ floatingTexts: currentTexts.filter(ft => now - ft.createdAt <= FLOAT_CLEANUP) });
+    }
+
+    // Clean up expired screen shake
+    if (shakeData && now - shakeData.createdAt > SHAKE_CLEANUP) {
+      useGameStore.setState({ screenShake: null });
     }
 
     // Clear and draw base map from offscreen
@@ -181,11 +187,19 @@ const MapView: React.FC = () => {
     ctx.fillStyle = '#0a0a12';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Apply screen shake
-    if (shake > 0) {
-      const shakeX = (Math.random() - 0.5) * shake * 2;
-      const shakeY = (Math.random() - 0.5) * shake * 2;
-      ctx.translate(shakeX, shakeY);
+    // Apply time-based screen shake with ease-out decay
+    const shakeDataNow = useGameStore.getState().screenShake;
+    if (shakeDataNow) {
+      const elapsed = now - shakeDataNow.createdAt;
+      if (elapsed < SHAKE_DURATION) {
+        // Ease-out: shake starts strong and decays to 0 over SHAKE_DURATION
+        const progress = elapsed / SHAKE_DURATION;
+        const decay = 1 - Math.pow(progress, 2); // ease-out quadratic
+        const currentIntensity = shakeDataNow.intensity * decay;
+        const shakeX = (Math.random() - 0.5) * currentIntensity * 2;
+        const shakeY = (Math.random() - 0.5) * currentIntensity * 2;
+        ctx.translate(shakeX, shakeY);
+      }
     }
 
     // Draw offscreen map

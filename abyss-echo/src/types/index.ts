@@ -466,6 +466,7 @@ export interface EnemyDef {
   dropChance: number;
   specialAbility?: string;
   alertRadius: number;
+  attackRange?: number; // default 1 (adjacent); 2 = can hit at Manhattan dist 2
   goldDrop: number;
 }
 
@@ -485,6 +486,7 @@ export interface Enemy extends EntityBase {
   dropChance: number;
   specialAbility?: string;
   alertRadius: number;
+  attackRange: number; // Manhattan distance for melee attack (default 1)
   isBoss: boolean;
   goldDrop: number;
   hidden?: boolean;
@@ -618,7 +620,7 @@ export interface GameState {
   themedRooms: { room: { x: number; y: number; w: number; h: number; centerX: number; centerY: number; theme?: RoomTheme }; theme: RoomTheme }[];
   steamVentTurns: { x: number; y: number; spawnTurn: number }[];
   floatingTexts: { x: number; y: number; text: string; color: string; createdAt: number; type?: 'damage' | 'heal' | 'status' | 'crit' }[];
-  screenShake: number;
+  screenShake: { intensity: number; createdAt: number } | null;
 }
 
 export interface HighScore {

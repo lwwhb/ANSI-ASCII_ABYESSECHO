@@ -168,7 +168,7 @@ export function generateCrypt(floor: number, seed: number): DungeonData {
   const stairsDown = { x: stairsRoom.centerX, y: stairsRoom.centerY };
   map[stairsDown.y][stairsDown.x] = createTile(TileType.StairsDown, biome);
 
-  const enemies = placeEnemies(rooms, floor, rng, config.enemyIds);
+  const enemies = placeEnemies(rooms, floor, rng, config.enemyIds, undefined, startRoom);
   const items = placeItems(rooms, floor, rng, config.itemsPerFloorBase, config.itemsPerFloorGrowth);
 
   let shopPos: Position | undefined;

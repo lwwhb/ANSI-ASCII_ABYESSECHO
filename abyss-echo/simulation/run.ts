@@ -624,6 +624,10 @@ function runSingleSimulation(className: CharacterClass, runIndex: number, maxFlo
       }
 
       // Track resource usage before executing
+      // Snapshot key state before useSkill to detect rejected (no-op) skill attempts
+      const preSkillMp = action.type === 'useSkill' ? state.player?.mp : null;
+      const preSkillCd = action.type === 'useSkill' ? [...(state.player?.skillCooldowns ?? [])] : null;
+
       if (action.type === 'useSkill') {
         const skillNamesByClass: Record<string, string[]> = {
           warrior: ['shieldBash', 'warCry', 'whirlwind'],
@@ -680,6 +684,20 @@ function runSingleSimulation(className: CharacterClass, runIndex: number, maxFlo
       turnOnFloor++;
       totalTurns++;
       result.totalTurns = totalTurns;
+
+      // Detect rejected (no-op) skill attempts — game's useSkill returns without consuming MP/CD
+      // when pre-validation fails (no target in range/LOS). These don't advance the game turn,
+      // so we should not count them as effective turns.
+      if (preSkillMp !== null && preSkillCd !== null) {
+        const postState = store.getState();
+        const postMp = postState.player?.mp;
+        const postCd = postState.player?.skillCooldowns;
+        if (postMp === preSkillMp && postCd && postCd[0] === preSkillCd[0]) {
+          // Skill was rejected — no state change. Don't count as an effective turn.
+          turnOnFloor--;
+          // But still count totalTurns to prevent infinite outer loop
+        }
+      }
 
       // Record action trace for stuck diagnosis
       const s2 = store.getState();

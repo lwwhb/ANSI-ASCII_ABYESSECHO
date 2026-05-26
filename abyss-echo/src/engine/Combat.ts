@@ -185,11 +185,12 @@ export function getEnemyAction(
   rng: SeededRandom
 ): { dx: number; dy: number } | 'attack' | 'wait' | 'special' {
   const dist = Math.abs(enemy.pos.x - playerPos.x) + Math.abs(enemy.pos.y - playerPos.y);
+  const attackDist = enemy.attackRange ?? 1;
   const isVisible = visibleTiles.has(`${enemy.pos.x},${enemy.pos.y}`);
 
   // Confused enemies move in random directions
   if (isConfused(enemy)) {
-    if (dist === 1 && rng.chance(0.5)) {
+    if (dist <= attackDist && rng.chance(0.5)) {
       return 'attack'; // May accidentally attack player
     }
     const dirs = [
@@ -198,21 +199,21 @@ export function getEnemyAction(
     return rng.pick(dirs);
   }
 
-  // Adjacent to player → attack
-  if (dist === 1) {
+  // Within attack range → attack
+  if (dist <= attackDist) {
     if (enemy.specialAbility && isVisible && rng.chance(0.3)) {
       return 'special';
     }
     return 'attack';
   }
 
-  // Stationary enemies never move, only attack when adjacent
+  // Stationary enemies never move, only attack within range
   if (enemy.behavior === 'stationary') {
     // Dormant enemies activate when player is within alert radius
     if (enemy.specialAbility === 'dormant' && isVisible && dist <= enemy.alertRadius) {
       return 'special';
     }
-    if (dist === 1) {
+    if (dist <= attackDist) {
       if (enemy.specialAbility && isVisible && rng.chance(0.3)) {
         return 'special';
       }
@@ -358,7 +359,7 @@ export function getTrapEffect(trapType: string): { damage: number; statusEffect?
 // ============================================================
 
 export function expForLevel(level: number): number {
-  return Math.floor(20 * Math.pow(1.5, level - 1));
+  return Math.floor(35 * Math.pow(1.6, level - 1));
 }
 
 export function checkLevelUp(player: Player): boolean {

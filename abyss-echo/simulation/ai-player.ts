@@ -8,6 +8,52 @@ import { ItemType, StatusEffectType, BossBlessing, CharacterClass, EquipmentSlot
 import { SeededRandom } from '../src/utils/random.js';
 
 // ============================================================
+// Line-of-sight check matching game's hasLineOfSight from FOV.ts
+// Uses Bresenham + transparent property (same as game)
+// ============================================================
+function hasClearLOS(
+  map: { type: TileType; walkable: boolean; visible: boolean; transparent?: boolean; char?: string; remembered?: boolean }[][],
+  fromX: number, fromY: number,
+  toX: number, toY: number,
+): boolean {
+  const mapH = map.length;
+  const mapW = map[0]?.length ?? 0;
+  const dx = Math.abs(toX - fromX);
+  const dy = Math.abs(toY - fromY);
+  const sx = fromX < toX ? 1 : -1;
+  const sy = fromY < toY ? 1 : -1;
+  let err = dx - dy;
+  let x = fromX, y = fromY;
+
+  while (x !== toX || y !== toY) {
+    if (x >= 0 && x < mapW && y >= 0 && y < mapH) {
+      if (x !== fromX || y !== fromY) {
+        const tile = map[y][x];
+        // If transparent is undefined, infer from walkable: walkable tiles are typically transparent
+        const isTransparent = tile.transparent !== undefined ? tile.transparent : tile.walkable;
+        if (!isTransparent) return false;
+      }
+    }
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+  }
+
+  // Check destination tile transparency (matches game's hasLineOfSight)
+  if (toX >= 0 && toX < mapW && toY >= 0 && toY < mapH) {
+    const destTile = map[toY][toX];
+    return destTile.transparent !== undefined ? destTile.transparent : destTile.walkable;
+  }
+  return false;
+}
+
+// ============================================================
+// Skill failure tracking — prevent infinite retry loops
+// ============================================================
+let consecutiveSkillFails = 0;
+const SKILL_FAIL_THRESHOLD = 3; // After 3 consecutive fails, stop trying skills
+
+// ============================================================
 // Position tracking for stuck detection (module-level ring buffer)
 // ============================================================
 const VISITED_BUFFER_SIZE = 30;
@@ -56,6 +102,7 @@ function getLeastVisitedDirection(px: number, py: number, floor: number, isWalka
 export function resetVisitedPositions(): void {
   visitedPositions.length = 0;
   lastFailedEquipKey = '';
+  consecutiveSkillFails = 0;
 }
 
 export function markEquipFailed(key: string): void {
@@ -490,7 +537,7 @@ function findNearestVisibleEnemy(player: Player, enemies: Enemy[], visibleTiles:
 function getAdjacentEnemy(player: Player, enemies: Enemy[]): Enemy | null {
   for (const e of enemies) {
     if (e.hp <= 0) continue;
-    if (Math.abs(e.pos.x - player.pos.x) + Math.abs(e.pos.y - player.pos.y) === 1) return e;
+    if (euclideanDist(player.pos.x, player.pos.y, e.pos.x, e.pos.y) <= 1.5) return e;
   }
   return null;
 }
@@ -499,14 +546,19 @@ function getAdjacentEnemiesCount(player: Player, enemies: Enemy[]): number {
   let count = 0;
   for (const e of enemies) {
     if (e.hp <= 0) continue;
-    if (Math.abs(e.pos.x - player.pos.x) + Math.abs(e.pos.y - player.pos.y) <= 1.5) count++;
+    if (euclideanDist(player.pos.x, player.pos.y, e.pos.x, e.pos.y) <= 1.5) count++;
   }
   return count;
 }
 
 function getVisibleEnemiesInRange(player: Player, enemies: Enemy[], visibleTiles: Set<string>, range: number): Enemy[] {
   return enemies.filter(e => e.hp > 0 && isEnemyVisible(e, visibleTiles) &&
-    Math.abs(e.pos.x - player.pos.x) + Math.abs(e.pos.y - player.pos.y) <= range);
+    euclideanDist(player.pos.x, player.pos.y, e.pos.x, e.pos.y) <= range);
+}
+
+// Euclidean distance — matches the game's distance() function in FOV.ts
+function euclideanDist(x1: number, y1: number, x2: number, y2: number): number {
+  return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
 }
 
 // Check if any visible enemy is a boss
@@ -758,7 +810,7 @@ function findBestEnhanceTarget(player: Player, currentFloor: number): EquipmentS
 export function decideAction(
   player: Player,
   enemies: Enemy[],
-  map: { type: TileType; walkable: boolean; visible: boolean; char?: string; remembered?: boolean }[][],
+  map: { type: TileType; walkable: boolean; visible: boolean; char?: string; remembered?: boolean; transparent?: boolean }[][],
   visibleTiles: Set<string>,
   items: { pos: { x: number; y: number } }[],
   currentFloor: number,
@@ -899,8 +951,10 @@ export function decideAction(
 
   const adjEnemy = getAdjacentEnemy(player, enemies);
   const adjEnemyCount = getAdjacentEnemiesCount(player, enemies);
-  const visibleEnemies5 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 5);
-  const visibleEnemies8 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 8);
+  // Skill ranges: fireball=4, chainLightning=6, shadowStep=6, fanOfKnives radius=2
+  const visibleEnemies4 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 4); // fireball range
+  const visibleEnemies6 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 6); // chainLightning/shadowStep range
+  const visibleEnemies8 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 8); // general awareness
   const bossVisible = isBossVisible(player, enemies, visibleTiles);
   const nearestBoss = bossVisible ? findNearestVisibleBoss(player, enemies, visibleTiles) : null;
 
@@ -991,6 +1045,7 @@ export function decideAction(
   // ---- 2. BOSS FLOOR: SINGLE-MINDED SEEK-AND-DESTROY ----
   // On boss floor, the ONLY priority is: find Boss → kill Boss → then descend.
   // All other priorities (items, doors, exploration) are subordinate to this goal.
+  // When skills are blocked, still allow boss approach (movement only)
 
   const onBossFloor = isBossFloor(currentFloor);
   const approachingBossFloor = isApproachingBossFloor(currentFloor);
@@ -1019,7 +1074,7 @@ export function decideAction(
 
     // --- 2-FIGHT: Boss visible — engage immediately ---
     if (bossVisible && nearestBoss) {
-      const bossDist = Math.abs(nearestBoss.pos.x - px) + Math.abs(nearestBoss.pos.y - py);
+      const bossDist = euclideanDist(px, py, nearestBoss.pos.x, nearestBoss.pos.y);
 
       // Adjacent regular enemies → clear them first only if boss not adjacent
       const adjacentRegulars = getAdjacentEnemiesCount(player, enemies.filter(e => !e.isBoss && e.hp > 0));
@@ -1071,8 +1126,8 @@ export function decideAction(
       } else {
         // Boss at range — approach and cast
         if (player.class === CharacterClass.Mage) {
-          if (bossDist <= 6 && skillCooldowns[2] <= 0 && player.mp >= 10) return { type: 'useSkill', itemIndex: 2 };
-          if (bossDist <= 5 && skillCooldowns[0] <= 0 && player.mp >= 7) return { type: 'useSkill', itemIndex: 0 };
+          if (bossDist <= 6 && skillCooldowns[2] <= 0 && player.mp >= 10 && hasClearLOS(map, px, py, nearestBoss.pos.x, nearestBoss.pos.y)) return { type: 'useSkill', itemIndex: 2 };
+          if (bossDist <= 4 && skillCooldowns[0] <= 0 && player.mp >= 7 && hasClearLOS(map, px, py, nearestBoss.pos.x, nearestBoss.pos.y)) return { type: 'useSkill', itemIndex: 0 };
           if (bossDist <= 2) {
             const retreat = getRetreatDirection(player, enemies, isWalkableForBFS, w, h);
             if (retreat) return retreat;
@@ -1090,7 +1145,7 @@ export function decideAction(
     // --- 2-SEEK: Boss not visible — navigate directly to boss position ---
     // Boss position is always known from enemy data — go there immediately
     {
-      const bossDist = Math.abs(boss.pos.x - px) + Math.abs(boss.pos.y - py);
+      const bossDist = euclideanDist(px, py, boss.pos.x, boss.pos.y);
       // Boss adjacent but not visible? Must be behind a door — open it
       if (bossDist <= 1) {
         const adjDirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
@@ -1203,7 +1258,7 @@ export function decideAction(
         const hasDefUp = player.statusEffects.some(e => e.type === StatusEffectType.DefenseUp);
         const hasAttackSkill = (skillCooldowns[0] <= 0 && player.mp >= 7) || (skillCooldowns[2] <= 0 && player.mp >= 10);
         const mageHpRatio = player.hp / Math.max(1, player.maxHp);
-        if (!hasDefUp && visibleEnemies5.length > 0 && (mageHpRatio < 0.5 || !hasAttackSkill)) return { type: 'useSkill', itemIndex: 1 };
+        if (!hasDefUp && visibleEnemies4.length > 0 && (mageHpRatio < 0.5 || !hasAttackSkill)) return { type: 'useSkill', itemIndex: 1 };
       }
       // Rogue: PoisonBlade before engaging
       if (player.class === CharacterClass.Rogue && skillCooldowns[1] <= 0 && player.mp >= 4) {
@@ -1223,7 +1278,7 @@ export function decideAction(
     // ---- 3c. COMBAT SCROLLS on groups ----
     // Save combat scrolls for boss fights if approaching/approaching boss floor
     const shouldSaveScrolls = (onBossFloor || approachingBossFloor) && !bossVisible;
-    if (visibleEnemies5.length >= 2 && !shouldSaveScrolls) {
+    if (visibleEnemies4.length >= 2 && !shouldSaveScrolls) {
       const scrollIdx = findCombatScroll(player);
       if (scrollIdx >= 0) return { type: 'useItem', itemIndex: scrollIdx };
     }
@@ -1309,23 +1364,30 @@ export function decideAction(
 
       // Ranged skills — attack from skill range while kiting
       const enemiesInRange6 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 6);
-      const enemiesInRange5 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 5);
+      const enemiesInRange4 = getVisibleEnemiesInRange(player, enemies, visibleTiles, 4); // fireball range
+
+      // Check if any ranged skill has a valid LOS target
+      const hasRangedLosTarget = (enemiesInRange4.some(e => hasClearLOS(map, px, py, e.pos.x, e.pos.y)) && skillCooldowns[0] <= 0 && player.mp >= 7) ||
+        (enemiesInRange6.some(e => hasClearLOS(map, px, py, e.pos.x, e.pos.y)) && skillCooldowns[2] <= 0 && player.mp >= 10);
 
       // ChainLightning: priority for boss/elite (high single-target + splash)
+      // Must have clear LOS — can't shoot through walls
       if (enemiesInRange6.length >= 1 && skillCooldowns[2] <= 0 && player.mp >= 10) {
         const bossInRange = enemiesInRange6.some(e => e.isBoss);
-        if (bossInRange || enemiesInRange6.length >= 2) {
+        const hasLosTarget = enemiesInRange6.some(e => hasClearLOS(map, px, py, e.pos.x, e.pos.y));
+        if ((bossInRange || enemiesInRange6.length >= 2) && hasLosTarget) {
           return { type: 'useSkill', itemIndex: 2 };
         }
       }
 
-      // Fireball: use aggressively on any enemy in range (skill range is the kite distance)
-      if (enemiesInRange5.length >= 1 && skillCooldowns[0] <= 0 && player.mp >= 7) {
-        return { type: 'useSkill', itemIndex: 0 };
+      // Fireball: use on any enemy in range 4 with clear LOS
+      if (enemiesInRange4.length >= 1 && skillCooldowns[0] <= 0 && player.mp >= 7) {
+        const hasLosTarget = enemiesInRange4.some(e => hasClearLOS(map, px, py, e.pos.x, e.pos.y));
+        if (hasLosTarget) return { type: 'useSkill', itemIndex: 0 };
       }
 
       // Combat scroll at range
-      if (visibleEnemies5.length >= 1 && hpRatio > 0.5) {
+      if (visibleEnemies4.length >= 1 && hpRatio > 0.5) {
         const scrollIdx = findCombatScroll(player);
         if (scrollIdx >= 0) return { type: 'useItem', itemIndex: scrollIdx };
       }
@@ -1337,7 +1399,7 @@ export function decideAction(
       }
 
       // Out of MP with no mana potion — move toward enemy for melee
-      if (outOfMana && visibleEnemies5.length > 0) {
+      if (outOfMana && visibleEnemies4.length > 0) {
         const target = findNearestVisibleEnemy(player, enemies, visibleTiles, 8);
         if (target) {
           const path = bfsToTarget(px, py, target.pos.x, target.pos.y, isWalkableForBFS, w, h, map);
@@ -1345,14 +1407,24 @@ export function decideAction(
         }
       }
 
-      // Skills on cooldown but MP available — retreat to kite distance (skip when overdue)
-      if (canKite && !outOfMana && visibleEnemies5.length > 0 && !overdueOnFloor) {
+      // No LOS for ranged skills — approach enemy to get LOS (don't retreat!)
+      // Retreating when you can't shoot only makes LOS worse
+      if (!hasRangedLosTarget && visibleEnemies4.length > 0) {
+        const target = findNearestVisibleEnemy(player, enemies, visibleTiles, 8);
+        if (target) {
+          const path = bfsToTarget(px, py, target.pos.x, target.pos.y, isWalkableForBFS, w, h, map);
+          if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+        }
+      }
+
+      // Skills on cooldown but have LOS target — retreat to kite distance (skip when overdue)
+      if (canKite && !outOfMana && hasRangedLosTarget && !overdueOnFloor) {
         const retreatDir = getRetreatDirection(player, enemies, isWalkable, w, h);
         if (retreatDir) return retreatDir;
       }
 
       // No ranged skills available and no adjacent enemy: move toward nearest enemy for melee
-      if (noSkillsAvailable && visibleEnemies5.length > 0) {
+      if (noSkillsAvailable && visibleEnemies4.length > 0) {
         const target = findNearestVisibleEnemy(player, enemies, visibleTiles, 8);
         if (target) {
           const path = bfsToTarget(px, py, target.pos.x, target.pos.y, isWalkableForBFS, w, h, map);
@@ -1364,15 +1436,14 @@ export function decideAction(
     // ---- 3e. ROGUE: ShadowStep for gap-closing ----
     if (player.class === CharacterClass.Rogue) {
       // ShadowStep: guaranteed crit gap-closer, use when healthy or on bosses
-      if (visibleEnemies8.length >= 1 && skillCooldowns[0] <= 0 && player.mp >= 6 && !adjEnemy) {
-        const bossVisible8 = visibleEnemies8.some(e => e.isBoss);
+      if (visibleEnemies6.length >= 1 && skillCooldowns[0] <= 0 && player.mp >= 6 && !adjEnemy) {
+        const bossVisible6 = visibleEnemies6.some(e => e.isBoss);
         const healthyEnough = player.hp > player.maxHp * 0.6;
         // Only ShadowStep if enemies are close enough (within 4 tiles) — don't waste on distant enemies
-        const closeEnemy = visibleEnemies8.find(e => {
-          const d = Math.abs(e.pos.x - px) + Math.abs(e.pos.y - py);
-          return d <= 4;
+        const closeEnemy = visibleEnemies6.find(e => {
+          return euclideanDist(px, py, e.pos.x, e.pos.y) <= 4;
         });
-        if ((bossVisible8 || healthyEnough) && closeEnemy) {
+        if ((bossVisible6 || healthyEnough) && closeEnemy) {
           return { type: 'useSkill', itemIndex: 0 };
         }
       }
@@ -1394,7 +1465,7 @@ export function decideAction(
       const maxChaseFloor = turnOnFloor > 60 ? 6 : 12;
       const target = findNearestVisibleEnemy(player, enemies, visibleTiles, maxChaseFloor);
       if (target) {
-        const dist = Math.abs(target.pos.x - px) + Math.abs(target.pos.y - py);
+        const dist = euclideanDist(px, py, target.pos.x, target.pos.y);
         // Avoid elite enemies when HP is below 60% (they hit much harder)
         const isElite = (target as any).isElite;
         if (isElite && player.hp < Math.floor(player.maxHp * 0.6)) {
@@ -1733,7 +1804,7 @@ export function decideAction(
     }
   }
 
-  // 6j. Ultimate fallback: non-repeating random walk
+  // ---- 6j. Ultimate fallback: non-repeating random walk ----
   // When extremely stuck (>400 turns), also try walking into doors/walls
   // to discover hidden paths through openDoor side-effects
   const shuffled = [...fallbackDirs].sort(() => rng.next() - 0.5);

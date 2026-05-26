@@ -31,7 +31,7 @@ export const CLASS_DEFS: Record<CharacterClass, {
     nameZh: '战士',
     description: '钢铁意志的近战专家。高生命值与攻击力，适合正面冲锋。',
     baseStats: { str: 14, dex: 8, int: 6, vit: 12 },
-    baseHp: 30,
+    baseHp: 35,
     baseMp: 5,
     char: '@',
     fg: '#ff6644',
@@ -247,10 +247,10 @@ export const ENEMY_DEFS: EnemyDef[] = [
   { id: 'bat',       name: '蝙蝠',     char: 'ψ', fg: '#aa88cc', hp: 7,  attack: 3,  defense: 1,  exp: 4,  behavior: EnemyBehavior.Cowardly,    element: Element.None,       weakness: Element.Lightning,  resistance: Element.None,       minFloor: 1,  speed: 2, dropChance: 0.1, alertRadius: 7, goldDrop: 2 },
   { id: 'goblin',    name: '哥布林',   char: 'ǥ', fg: '#44aa44', hp: 15, attack: 5,  defense: 2,  exp: 8,  behavior: EnemyBehavior.CallAlly,    element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 2,  speed: 1, dropChance: 0.3, alertRadius: 6, goldDrop: 5 },
   { id: 'caveScorpion', name: '洞穴蝎', char: 'π', fg: '#88aa44', hp: 12, attack: 4,  defense: 2,  exp: 6,  behavior: EnemyBehavior.Aggressive,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 1,  speed: 1, dropChance: 0.25, alertRadius: 5, specialAbility: 'poisonSting', goldDrop: 4 },
-  { id: 'gargoyle',     name: '石像鬼', char: 'Γ', fg: '#888888', hp: 20, attack: 3,  defense: 5,  exp: 10, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 2,  speed: 1, dropChance: 0.35, alertRadius: 3, specialAbility: 'dormant', goldDrop: 8 },
+  { id: 'gargoyle',     name: '石像鬼', char: 'Γ', fg: '#888888', hp: 20, attack: 3,  defense: 5,  exp: 10, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 2,  speed: 1, dropChance: 0.35, alertRadius: 5, specialAbility: 'dormant', attackRange: 3, goldDrop: 8 },
   // Floor 6-10
   { id: 'skeleton',  name: '骷髅',     char: 'S', fg: '#ccccaa', hp: 28, attack: 7,  defense: 5,  exp: 15, behavior: EnemyBehavior.Revive,      element: Element.None,       weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 5,  speed: 1, dropChance: 0.3, alertRadius: 6, goldDrop: 8 },
-  { id: 'spider',    name: '巨蛛',     char: '╳', fg: '#664422', hp: 22, attack: 8,  defense: 4,  exp: 12, behavior: EnemyBehavior.Stationary,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 5,  speed: 1, dropChance: 0.25, alertRadius: 4, specialAbility: 'web', goldDrop: 6 },
+  { id: 'spider',    name: '巨蛛',     char: '╳', fg: '#664422', hp: 22, attack: 8,  defense: 4,  exp: 12, behavior: EnemyBehavior.Stationary,  element: Element.Poison,     weakness: Element.Fire,       resistance: Element.Poison,     minFloor: 5,  speed: 1, dropChance: 0.25, alertRadius: 5, specialAbility: 'web', attackRange: 3, goldDrop: 6 },
   { id: 'orc',       name: '兽人',     char: 'Ω', fg: '#66aa44', hp: 35, attack: 10, defense: 6,  exp: 20, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 6,  speed: 1, dropChance: 0.35, alertRadius: 5, goldDrop: 12 },
   { id: 'shadow',    name: '暗影',     char: 'ω', fg: '#4444aa', hp: 22, attack: 9,  defense: 4,  exp: 18, behavior: EnemyBehavior.Ambush,      element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 7, speed: 2, dropChance: 0.2, alertRadius: 8, goldDrop: 10 },
   { id: 'crystalGuard', name: '水晶守卫', char: 'C', fg: '#88ccff', hp: 32, attack: 8,  defense: 7,  exp: 16, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Lightning,  resistance: Element.None,       minFloor: 6, speed: 1, dropChance: 0.3, alertRadius: 6, specialAbility: 'reflect', goldDrop: 12 },
@@ -537,19 +537,19 @@ export const FOOD_DEFS = [
 // ============================================================
 export const SKILL_DEFS: Record<CharacterClass, SkillDef[]> = {
   [CharacterClass.Warrior]: [
-    { id: 'shieldBash', name: 'Shield Bash', nameZh: '盾击', description: '击退并眩晕相邻敌人2回合', mpCost: 5, maxCooldown: 3, element: Element.None, range: 1, radius: 0, power: 0, key: 'z', icon: '🛡' },
-    { id: 'warCry', name: 'War Cry', nameZh: '战吼', description: '提升5点防御，持续5回合', mpCost: 8, maxCooldown: 8, element: Element.None, range: 0, radius: 0, power: 5, key: 'x', icon: '📢' },
-    { id: 'whirlwind', name: 'Whirlwind', nameZh: '旋风斩', description: '攻击周围所有敌人，造成1.5倍武器伤害', mpCost: 10, maxCooldown: 6, element: Element.None, range: 0, radius: 1, power: 1, key: 'c', icon: '🌀' },
+    { id: 'shieldBash', name: 'Shield Bash', nameZh: '盾击', description: '击退并眩晕相邻敌人，造成少量伤害', mpCost: 5, maxCooldown: 3, element: Element.None, range: 1, radius: 0, power: 3, key: 'z', icon: '🛡' },
+    { id: 'warCry', name: 'War Cry', nameZh: '战吼', description: '提升5点防御，持续5回合', mpCost: 8, maxCooldown: 6, element: Element.None, range: 0, radius: 0, power: 5, key: 'x', icon: '📢' },
+    { id: 'whirlwind', name: 'Whirlwind', nameZh: '旋风斩', description: '攻击周围所有敌人，造成2倍武器伤害', mpCost: 10, maxCooldown: 6, element: Element.None, range: 0, radius: 1, power: 2, key: 'c', icon: '🌀' },
   ],
   [CharacterClass.Mage]: [
-    { id: 'fireball', name: 'Fireball', nameZh: '火球术', description: '对视野内敌人发射火球，造成范围伤害', mpCost: 7, maxCooldown: 4, element: Element.Fire, range: 5, radius: 1, power: 20, key: 'z', icon: '🔥' },
+    { id: 'fireball', name: 'Fireball', nameZh: '火球术', description: '对视野内敌人发射火球，造成范围伤害', mpCost: 7, maxCooldown: 5, element: Element.Fire, range: 4, radius: 1, power: 10, key: 'z', icon: '🔥' },
     { id: 'iceShield', name: 'Ice Shield', nameZh: '冰盾', description: '获得5点防御和冰冻免疫，持续5回合', mpCost: 6, maxCooldown: 6, element: Element.Ice, range: 0, radius: 0, power: 5, key: 'x', icon: '🧊' },
-    { id: 'chainLightning', name: 'Chain Lightning', nameZh: '闪电链', description: '对最近3个敌人释放闪电', mpCost: 10, maxCooldown: 5, element: Element.Lightning, range: 6, radius: 0, power: 18, key: 'c', icon: '⚡' },
+    { id: 'chainLightning', name: 'Chain Lightning', nameZh: '闪电链', description: '对最近3个敌人释放闪电', mpCost: 10, maxCooldown: 6, element: Element.Lightning, range: 6, radius: 0, power: 9, key: 'c', icon: '⚡' },
   ],
   [CharacterClass.Rogue]: [
-    { id: 'shadowStep', name: 'Shadow Step', nameZh: '暗影步', description: '瞬移到最近敌人身边并造成2倍暴击', mpCost: 6, maxCooldown: 4, element: Element.None, range: 6, radius: 0, power: 2, key: 'z', icon: '👤' },
+    { id: 'shadowStep', name: 'Shadow Step', nameZh: '暗影步', description: '瞬移到最近敌人身边并造成2倍暴击', mpCost: 6, maxCooldown: 3, element: Element.None, range: 6, radius: 0, power: 2, key: 'z', icon: '👤' },
     { id: 'poisonBlade', name: 'Poison Blade', nameZh: '毒刃', description: '下一次攻击附带剧毒(5伤害/4回合)', mpCost: 4, maxCooldown: 3, element: Element.Poison, range: 0, radius: 0, power: 5, key: 'x', icon: '🗡' },
-    { id: 'fanOfKnives', name: 'Fan of Knives', nameZh: '扇刃', description: '对2格内所有敌人造成伤害', mpCost: 8, maxCooldown: 5, element: Element.None, range: 0, radius: 2, power: 10, key: 'c', icon: '🔪' },
+    { id: 'fanOfKnives', name: 'Fan of Knives', nameZh: '扇刃', description: '对2格内所有敌人造成伤害', mpCost: 8, maxCooldown: 5, element: Element.None, range: 0, radius: 2, power: 14, key: 'c', icon: '🔪' },
   ],
 };
 
