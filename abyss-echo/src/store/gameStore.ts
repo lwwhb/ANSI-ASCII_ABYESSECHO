@@ -7,7 +7,7 @@ import {
   GameEventDef, ExtendedGameEventDef, Biome, Position, EquipmentEffect, EnemyBehavior,
   BossBlessing, EliteAffix, RelicId, RoomTheme, HiddenRoomType, RelicRarity,
 } from '../types';
-import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS, ENHANCE_COSTS, ENHANCE_SUCCESS_RATES, ENHANCE_ATK_MULT, ENHANCE_DEF_MULT, ELITE_REGEN_RATE, ENEMY_SPECIAL_CHANCE } from '../constants';
+import { CLASS_DEFS, HUNGER_RATE, HUNGER_STARVE_DAMAGE, DESCEND_HUNGER_RESTORE, getBiomeForFloor, BIOME_CONFIG, ENEMY_DEFS, SKILL_DEFS, TALENT_DEFS, ACHIEVEMENT_DEFS, GAME_EVENTS, FLOOR_DESCRIPTIONS, BOSS_PHASES, INSCRIPTION_TEXTS, ENHANCE_COSTS, ENHANCE_SUCCESS_RATES, ENHANCE_ATK_MULT, ENHANCE_DEF_MULT, ELITE_REGEN_RATE, ENEMY_SPECIAL_CHANCE, FOOD_DEFS, SCROLL_DEFS, POTION_DEFS } from '../constants';
 import { RELIC_DEFS, RELICS_BY_RARITY } from '../constants/relics';
 import { THEMED_ROOM_CONFIGS } from '../constants/themedRooms';
 import { EXTENDED_EVENT_DEFS } from '../constants/events';
@@ -22,8 +22,8 @@ import { createFood, createPotion } from '../entities/Items';
 import { generateDungeon, createTile } from '../generator/DungeonGenerator';
 import { computeFOV, distance, hasLineOfSight } from '../engine/FOV';
 import {
-  calculateMeleeDamage, processStatusEffects, isFrozen, isConfused, applyConfusion,
-  getEnemyAction, getTrapEffect, applyLevelUp, checkLevelUp, isTalentLevel,
+  calculateMeleeDamage, processStatusEffects, isFrozen, isConfused, isBlind, applyConfusion,
+  getEnemyAction, getTrapEffect, applyLevelUp, checkLevelUp, isTalentLevel, expForLevel,
 } from '../engine/Combat';
 import { createPlayer, getEffectiveStats, getPlayerWeaponDamage, getPlayerWeaponElement, equipItem, canEquipItem, getPlayerDefense, getMaxInventorySize, genId } from '../entities/Player';
 import { createEnemy, createEliteEnemy } from '../entities/Enemy';
@@ -96,7 +96,10 @@ const SAVE_VERSION = '1.3.4';
 function saveGame(state: GameStore) {
   try {
     // Only save GameState fields (exclude computed: visibleTiles, rememberedMap)
-    const { phase, player, currentFloor, map, width, height, enemies, items,
+    // Clean temp fields from player before saving
+    const cleanPlayer = { ...state.player };
+    delete (cleanPlayer as any)._descendHungerRestored;
+    const { phase, player: _origPlayer, currentFloor, map, width, height, enemies, items,
       messages, turn, seed, highScores, achievements, legacyItem,
       isDailyChallenge, shopItems, currentEvent,
       skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
@@ -107,7 +110,7 @@ function saveGame(state: GameStore) {
     const saveData = {
       version: SAVE_VERSION,
       state: {
-        phase, player, currentFloor, map, width, height, enemies, items,
+        phase, player: cleanPlayer, currentFloor, map, width, height, enemies, items,
         messages, turn, seed, highScores, achievements, legacyItem,
         isDailyChallenge, shopItems, currentEvent,
         skillUseCount, shopBuyCount, musicEnabled, sfxEnabled,
@@ -154,6 +157,9 @@ const SAVE_FIELD_DEFAULTS: Partial<GameState> = {
   steamVentTurns: [],
   floatingTexts: [],
   screenShake: null,
+  devGodMode: false,
+  devRevealed: false,
+  devConsoleOpen: false,
 };
 
 function migrateSaveState(state: Record<string, unknown>): GameState {
@@ -241,9 +247,14 @@ const _EFFECT_NAME_ZH: Record<EquipmentEffect, string> = {
 
 function getTalentModifiedHungerRate(player: Player): number {
   let rate = HUNGER_RATE;
-  if (hasTalent(player, 'ironStomach')) rate *= 0.5;
   if (hasRelic(player, RelicId.HungerRing)) rate *= 0.5;
   return rate;
+}
+
+function getStarvationDamage(player: Player): number {
+  const base = HUNGER_STARVE_DAMAGE;
+  if (hasTalent(player, 'ironStomach')) return Math.max(1, Math.floor(base * 0.5));
+  return base;
 }
 
 function getTalentModifiedDamageReduction(player: Player): number {
@@ -328,6 +339,8 @@ function checkAchievements(state: GameState, player: Player): string[] {
   check('talent3', player.talents.length >= 3);
   check('pacifist10', state.currentFloor >= 10 && player.killCount === 0);
   check('glutton', state.currentFloor >= 5 && player.hunger >= 150);
+  check('mimicSlayer', player.mimicKillCount >= 1);
+  check('mimicHunter', player.mimicKillCount >= 10);
 
   return newAchievements;
 }
@@ -388,6 +401,20 @@ interface GameStore extends GameState {
   hasSaveGame: () => boolean;
   visibleTiles: Set<string>;
   rememberedMap: Map<string, { char: string; fg: string; bg: string }>;
+  devGoto: (floor: number) => void;
+  devSetHp: (hp: number) => void;
+  devSetMp: (mp: number) => void;
+  devSetHunger: (hunger: number) => void;
+  devSetGold: (gold: number) => void;
+  devAddExp: (exp: number) => void;
+  devSetLevel: (level: number) => void;
+  devToggleGod: () => void;
+  devReveal: () => void;
+  devGiveItem: (category: string) => void;
+  devSpawnEnemy: (defId: string) => void;
+  devResetCooldowns: () => void;
+  devAddTalent: (talentId: string) => void;
+  devKillAll: () => void;
 }
 
 const initialState: GameState = {
@@ -433,6 +460,9 @@ const initialState: GameState = {
   steamVentTurns: [],
   floatingTexts: [],
   screenShake: null,
+  devGodMode: false,
+  devRevealed: false,
+  devConsoleOpen: false,
 };
 
 export const useGameStore = create<GameStore>((set, get) => {
@@ -451,6 +481,14 @@ export const useGameStore = create<GameStore>((set, get) => {
   function updateFOV() {
     const state = get();
     if (!state.player) return;
+
+    // Dev reveal mode: keep all tiles visible
+    if (__DEV__ && state.devRevealed) {
+      const newMap = state.map.map(row => row.map(tile => ({ ...tile, visible: true, remembered: true })));
+      set({ map: newMap });
+      return;
+    }
+
     const effectiveVision = getTalentModifiedVisionRadius(state.player);
     const biome = getBiomeForFloor(state.currentFloor);
     const visible = computeFOV(state.map, state.player.pos, effectiveVision, biome, state.seed + state.turn);
@@ -521,6 +559,14 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Clamp HP to 0 — damage may overshoot, producing negative values
     player.hp = Math.max(0, player.hp);
 
+    // Dev god mode: prevent death
+    if (__DEV__ && state.devGodMode) {
+      player.hp = player.maxHp;
+      set({ player });
+      addMessages([msg('🛡 无敌模式阻止了死亡', MessageCategory.System, '#ff44ff')]);
+      return;
+    }
+
     // VoidHeart: prevent first death
     if (player.relics.includes(RelicId.VoidHeart) && !player.voidHeartUsed) {
       player.hp = Math.floor(player.maxHp * 0.5);
@@ -571,6 +617,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     // Handle extra turn cost (e.g. ShallowWater slow movement)
     if (state.extraTurnCost > 0) {
       set({ extraTurnCost: state.extraTurnCost - 1 });
+      addMessages([msg('你在浅水中艰难前行...', MessageCategory.Environment, '#5599dd')]);
       // Run a full turn where enemies act but player cannot move
       const s2 = get();
       if (!s2.player) return;
@@ -584,8 +631,9 @@ export const useGameStore = create<GameStore>((set, get) => {
       player2.hunger -= hungerRate2;
       if (player2.hunger <= 0) {
         player2.hunger = 0;
-        player2.hp -= HUNGER_STARVE_DAMAGE;
-        addFloatingText(player2.pos.x, player2.pos.y, `-${HUNGER_STARVE_DAMAGE}`, '#ff8800', 'status');
+        const starveDmg = getStarvationDamage(player2);
+        player2.hp -= starveDmg;
+        addFloatingText(player2.pos.x, player2.pos.y, `-${starveDmg}`, '#ff8800', 'status');
         if (player2.hp <= 0) {
           handlePlayerDeath(player2, enemies2, msgs2, '饥饿致死');
           return;
@@ -716,8 +764,9 @@ export const useGameStore = create<GameStore>((set, get) => {
     player.hunger -= hungerRate;
     if (player.hunger <= 0) {
       player.hunger = 0;
-      player.hp -= HUNGER_STARVE_DAMAGE;
-      addFloatingText(player.pos.x, player.pos.y, `-${HUNGER_STARVE_DAMAGE}`, '#ff8800', 'status');
+      const starveDmg = getStarvationDamage(player);
+      player.hp -= starveDmg;
+      addFloatingText(player.pos.x, player.pos.y, `-${starveDmg}`, '#ff8800', 'status');
       if (prevHunger > 0) {
         messages.push(msg('你饥饿难耐，生命在流逝...', MessageCategory.System, '#ff8844'));
       } else if ((state.turn + 1) % 3 === 0) {
@@ -977,6 +1026,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             player.killCount++;
 
             if (enemies[i].isBoss) player.bossKillCount++;
+            if (enemies[i].defId === 'mimic') player.mimicKillCount++;
             messages.push(msg(`${enemies[i].name}被效果杀死了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
             AudioManager.playSFX('coin');
 
@@ -1053,7 +1103,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               let alerted = 0;
               for (let j = 0; j < enemies.length; j++) {
                 if (j !== i && enemies[j].hp > 0 && enemies[j].defId === enemy.defId) {
-                  enemies[j] = { ...enemies[j], speed: enemies[j].speed + 1 };
+                  enemies[j] = { ...enemies[j], speed: Math.min(enemies[j].speed + 1, 3) };
                   alerted++;
                 }
               }
@@ -1444,6 +1494,27 @@ export const useGameStore = create<GameStore>((set, get) => {
           }
         }
         messages.push(msg(`${enemy.name}召唤了 ${actualSummoned} 个援军！`, MessageCategory.Combat, '#ff8844'));
+        break;
+      }
+      case 'howl': {
+        const state = get();
+        const biome = getBiomeForFloor(state.currentFloor);
+        const config = BIOME_CONFIG[biome];
+        const safeEnemyIds = config.enemyIds.filter(id => {
+          const def = ENEMY_DEFS.find(d => d.id === id);
+          return !def || def.specialAbility !== 'howl';
+        });
+        const pool = safeEnemyIds.length > 0 ? safeEnemyIds : config.enemyIds;
+        const defId = rng.pick(pool);
+        const offset = { x: rng.nextInt(-2, 2), y: rng.nextInt(-2, 2) };
+        const spawnPos = { x: enemy.pos.x + offset.x, y: enemy.pos.y + offset.y };
+        let actualSummoned = 0;
+        if (spawnPos.x >= 0 && spawnPos.x < state.width && spawnPos.y >= 0 && spawnPos.y < state.height && state.map[spawnPos.y][spawnPos.x].walkable) {
+          const summoned = createEnemy(defId, spawnPos, false, state.currentFloor);
+          if (summoned) { enemies.push(summoned); actualSummoned++; }
+        }
+        messages.push(msg(`${enemy.name}发出凄厉的嚎叫！${actualSummoned > 0 ? '唤来了1个援军！' : ''}`, MessageCategory.Combat, '#ff8844'));
+        AudioManager.playSFX('alarm');
         break;
       }
       case 'breath': {
@@ -1925,6 +1996,17 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
     }
 
+    // 宝箱怪伪装：5% 概率将一个非食物物品变成伪装宝箱怪（包含隐藏房间物品）
+    if (items.length > 0 && rng.chance(0.05)) {
+      const nonFoodIndices = items
+        .map((fi, idx) => fi.item.type !== ItemType.Food ? idx : -1)
+        .filter(idx => idx >= 0);
+      if (nonFoodIndices.length > 0) {
+        const mimicIdx = rng.pick(nonFoodIndices);
+        items[mimicIdx] = { ...items[mimicIdx], isMimic: true };
+      }
+    }
+
     // Create shop items if there's a shop
     let shopItems: Item[] = [];
     if (dungeon.shopPos) {
@@ -1951,6 +2033,17 @@ export const useGameStore = create<GameStore>((set, get) => {
     }
 
     const player = { ...state.player, pos: { ...dungeon.playerStart } };
+
+    // Restore hunger on floor descent
+    if (floor > 1) {
+      const before = player.hunger;
+      player.hunger = Math.min(player.hunger + DESCEND_HUNGER_RESTORE, player.maxHunger);
+      const restored = player.hunger - before;
+      if (restored > 0) {
+        // Message will be added after set()
+        (player as any)._descendHungerRestored = restored;
+      }
+    }
 
     // Store themed rooms and steam vent turns from dungeon data
     const themedRooms = (dungeon as { themedRooms?: GameState['themedRooms'] }).themedRooms || [];
@@ -1983,6 +2076,7 @@ export const useGameStore = create<GameStore>((set, get) => {
       themedRooms,
       steamVentTurns,
       pendingForge: false,
+      devRevealed: false,
     });
 
     // Clear remembered map from previous floor
@@ -1991,6 +2085,18 @@ export const useGameStore = create<GameStore>((set, get) => {
     addMessages([
       msg(`你来到了第 ${floor} 层 - ${biomeConfig.nameZh}`, MessageCategory.Story, '#ffcc44'),
     ]);
+
+    // Show hunger restore message from descent
+    const restoredHunger = (get().player as any)?._descendHungerRestored;
+    if (restoredHunger) {
+      addMessages([msg(`深渊的气息让你恢复了一些体力，饱食度 +${restoredHunger}`, MessageCategory.Item, '#ccaa66')]);
+      // Clean up temp field
+      const p = get().player;
+      if (p) {
+        delete (p as any)._descendHungerRestored;
+        set({ player: p });
+      }
+    }
 
     // OldMap: reveal a themed room
     if (player.relics.includes(RelicId.OldMap) && themedRooms.length > 0) {
@@ -2156,18 +2262,12 @@ export const useGameStore = create<GameStore>((set, get) => {
         const stats = getEffectiveStats(player);
         const weaponDmg = getPlayerWeaponDamage(player);
         const weaponElement = getPlayerWeaponElement(player);
-        let result = calculateMeleeDamage(stats, weaponDmg, enemy, weaponElement, rng);
+        const critMult = getTalentModifiedCritMultiplier(player);
+        let result = calculateMeleeDamage(stats, weaponDmg, enemy, weaponElement, rng, critMult);
 
         // Apply talent: Blood Fury (physical bonus)
         const bloodFuryBonus = getTalentBloodFuryAttack(player);
         if (bloodFuryBonus > 0) result = { ...result, damage: result.damage + bloodFuryBonus, physicalDamage: result.physicalDamage + bloodFuryBonus };
-
-        // Apply talent: Deadly Strike (crit multiplier)
-        if (result.critical) {
-          const critMult = getTalentModifiedCritMultiplier(player);
-          const ratio = critMult / 1.5;
-          result = { ...result, damage: Math.floor(result.damage * ratio), physicalDamage: Math.floor(result.physicalDamage * ratio), elementalDamage: Math.floor(result.elementalDamage * ratio) };
-        }
 
         // Apply talent: Elemental Affinity (elemental bonus)
         if (weaponElement !== Element.None) {
@@ -2449,6 +2549,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           player.exp += exp;
           player.killCount++;
           if (enemy.isBoss) player.bossKillCount++;
+          if (enemy.defId === 'mimic') player.mimicKillCount++;
           player.gold += goldDrop;
           messages.push(msg(`${enemy.name}被击败了！获得 ${exp} 经验，${goldDrop} 金币`, MessageCategory.Combat, '#44cc44'));
           AudioManager.playSFX('coin');
@@ -2610,7 +2711,9 @@ export const useGameStore = create<GameStore>((set, get) => {
           const dropChance = getTalentModifiedDropChance(player, enemy.dropChance);
           if (rng.chance(dropChance)) {
             const luckBonus = hasTalent(player, 'lucky') ? 0.05 : 0;
-            const droppedItem = createRandomItem(state.currentFloor, rng, true, luckBonus, BIOME_CONFIG[getBiomeForFloor(state.currentFloor)].foodDropMultiplier);
+            // 宝箱怪保底 Rare+ 稀有度掉落
+            const mimicBonus = enemy.defId === 'mimic' ? 0.30 : 0;
+            const droppedItem = createRandomItem(state.currentFloor, rng, true, luckBonus + mimicBonus, BIOME_CONFIG[getBiomeForFloor(state.currentFloor)].foodDropMultiplier);
             const floorItem: FloorItem = { item: droppedItem, pos: { ...enemy.pos } };
             set({ items: [...state.items, floorItem] });
             messages.push(msg(`${enemy.name}掉落了${getItemName(droppedItem)}！`, MessageCategory.Item, '#4488ff'));
@@ -3314,6 +3417,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               set({ bossBlessingPending: true, lastBossDefId: original.defId });
             }
           }
+          if (original.defId === 'mimic') player.mimicKillCount++;
         }
       }
       set({ player, enemies });
@@ -3375,8 +3479,110 @@ export const useGameStore = create<GameStore>((set, get) => {
       const messages: Message[] = [];
       let picked = false;
 
-      for (let i = items.length - 1; i >= 0; i--) {
+      for (let i = 0; i < items.length; i++) {
         if (items[i].pos.x === pos.x && items[i].pos.y === pos.y) {
+          // 宝箱怪伪装揭示
+          if (items[i].isMimic) {
+            const mimicPos = items[i].pos;
+            items.splice(i, 1);
+
+            // 在相邻可行走格寻找 spawn 位置
+            const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+            let spawnPos: Position | null = null;
+            for (const [dx, dy] of dirs) {
+              const sx = mimicPos.x + dx;
+              const sy = mimicPos.y + dy;
+              if (sy >= 0 && sy < state.map.length && sx >= 0 && sx < state.map[0].length
+                  && state.map[sy][sx].walkable
+                  && !state.enemies.some(e => e.hp > 0 && e.pos.x === sx && e.pos.y === sy)) {
+                spawnPos = { x: sx, y: sy };
+                break;
+              }
+            }
+
+            // 陷阱感知天赋：察觉宝箱怪伪装，不触发突袭伤害
+            if (hasTalent(player, 'trapSense')) {
+              if (spawnPos) {
+                const mimic = createEnemy('mimic', spawnPos, false, state.currentFloor);
+                if (mimic) {
+                  mimic._skipAttack = true;
+                  const updatedEnemies = [...state.enemies, mimic];
+                  addMessages([msg('你的直觉警告你：这个物品不对劲！宝箱怪现出原形！', MessageCategory.Combat, '#ffaa44')]);
+                  addFloatingText(spawnPos.x, spawnPos.y, '宝箱怪!', '#ccaa44', 'crit');
+                  AudioManager.playSFX('alarm');
+                  set({ player, items, enemies: updatedEnemies });
+                  processTurn();
+                  return;
+                }
+              } else {
+                // 无空格也无法突袭，宝箱怪消失
+                addMessages([msg('你的直觉警告你：这个物品不对劲！宝箱怪逃走了！', MessageCategory.Combat, '#ffaa44')]);
+                AudioManager.playSFX('alarm');
+                set({ items });
+                processTurn();
+                return;
+              }
+            }
+
+            // 无 trapSense：正常触发突袭
+            if (spawnPos) {
+              // Spawn 宝箱怪敌人
+              const mimic = createEnemy('mimic', spawnPos, false, state.currentFloor);
+              if (mimic) {
+                mimic._skipAttack = true;  // 防止首次回合再次触发突袭
+                const updatedEnemies = [...state.enemies, mimic];
+                // 立即触发 surprise 突袭
+                const surpriseDamage = Math.floor(mimic.attack * 2);
+                const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player);
+                const actualDamage = Math.max(1, Math.floor(surpriseDamage * 20 / (20 + defense)));
+                const shield = applyManaShield(player, actualDamage);
+                player.hp -= shield.hpDamage;
+                player.mp -= shield.mpAbsorbed;
+
+                addMessages([msg('宝箱怪现出原形！', MessageCategory.Combat, '#ff4444')]);
+                addFloatingText(spawnPos.x, spawnPos.y, '宝箱怪!', '#ccaa44', 'crit');
+                addFloatingText(player.pos.x, player.pos.y, `-${shield.hpDamage}`, '#ff4444', 'damage');
+                if (shield.mpAbsorbed > 0) addFloatingText(player.pos.x, player.pos.y, `-${shield.mpAbsorbed}MP`, '#4488ff', 'status');
+                addMessages([msg(`宝箱怪突然袭击！造成 ${shield.hpDamage} 点伤害！${shield.mpAbsorbed > 0 ? ` 法力护盾吸收${shield.mpAbsorbed}点！` : ''}`, MessageCategory.Combat, '#ff4444')]);
+                flashScreen('#ff440033');
+                AudioManager.playSFX('trap');
+
+                if (player.hp <= 0) {
+                  set({ player, items, enemies: updatedEnemies });
+                  handlePlayerDeath(player, updatedEnemies, messages, '被宝箱怪伏击');
+                  return;
+                }
+
+                set({ player, items, enemies: updatedEnemies });
+                processTurn();
+                return;
+              }
+            } else {
+              // 无相邻空格：宝箱怪咬了就跑（当陷阱处理）
+              const baseDamage = 26;
+              const defense = getPlayerDefense(player) + getTalentModifiedDamageReduction(player) + getTalentModifiedTenaciousDefense(player) + getTalentShieldWallDefense(player);
+              const actualDamage = Math.max(1, Math.floor(baseDamage * 20 / (20 + defense)));
+              const shield = applyManaShield(player, actualDamage);
+              player.hp -= shield.hpDamage;
+              player.mp -= shield.mpAbsorbed;
+
+              addMessages([msg('宝箱怪咬了你一口就消失了！', MessageCategory.Combat, '#ff4444')]);
+              addFloatingText(player.pos.x, player.pos.y, `-${shield.hpDamage}`, '#ff4444', 'damage');
+              flashScreen('#ff440033');
+              AudioManager.playSFX('trap');
+
+              if (player.hp <= 0) {
+                set({ player, items });
+                handlePlayerDeath(player, state.enemies, messages, '被宝箱怪伏击');
+                return;
+              }
+
+              set({ player, items });
+              processTurn();
+              return;
+            }
+          }
+
           if (player.inventory.length < getMaxInventorySize(player)) {
             const pickedItem = items[i].item;
             const itemName = getItemName(pickedItem);
@@ -3569,6 +3775,7 @@ export const useGameStore = create<GameStore>((set, get) => {
                 player.exp += getTalentModifiedExp(player, e.exp);
                 player.killCount++;
                 if (e.isBoss) player.bossKillCount++;
+                if (e.defId === 'mimic') player.mimicKillCount++;
                 player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
               }
               break;
@@ -3592,6 +3799,7 @@ export const useGameStore = create<GameStore>((set, get) => {
                 player.exp += getTalentModifiedExp(player, e.exp);
                 player.killCount++;
                 if (e.isBoss) player.bossKillCount++;
+                if (e.defId === 'mimic') player.mimicKillCount++;
                 player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
               }
               break;
@@ -3612,6 +3820,7 @@ export const useGameStore = create<GameStore>((set, get) => {
                   player.exp += getTalentModifiedExp(player, closest.exp);
                   player.killCount++;
                   if (closest.isBoss) player.bossKillCount++;
+                  if (closest.defId === 'mimic') player.mimicKillCount++;
                   player.gold += getTalentModifiedGoldDrop(player, closest.goldDrop);
                 }
               }
@@ -3713,7 +3922,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         }
         case ItemType.Food: {
           const food = item as FoodItem;
-          player.hunger = player.hunger + food.nutrition;
+          player.hunger = Math.min(player.hunger + food.nutrition, player.maxHunger);
           messages.push(msg(`你吃了${food.name}，恢复了 ${food.nutrition} 饱食度`, MessageCategory.Item, '#ccaa66'));
           AudioManager.playSFX('heal');
           player.inventory = player.inventory.filter((_, i) => i !== index);
@@ -3983,6 +4192,17 @@ export const useGameStore = create<GameStore>((set, get) => {
     useSkill: (skillIndex: number) => {
       const state = get();
       if (!state.player || state.phase !== GamePhase.Playing) return;
+
+      // Cannot use skills while frozen or blind
+      if (isFrozen(state.player)) {
+        addMessages([msg('你被麻痹了，无法使用技能！', MessageCategory.System, '#888888')]);
+        return;
+      }
+      if (isBlind(state.player)) {
+        addMessages([msg('你什么都看不见，无法使用技能！', MessageCategory.System, '#888888')]);
+        return;
+      }
+
       if (state.player.skillCooldowns[skillIndex] > 0) {
         addMessages([msg('技能冷却中！', MessageCategory.System, '#888888')]);
         return;
@@ -4090,6 +4310,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             player.exp += getTalentModifiedExp(player, e.exp);
             player.killCount++;
             if (e.isBoss) player.bossKillCount++;
+            if (e.defId === 'mimic') player.mimicKillCount++;
             player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
           }
           break;
@@ -4117,7 +4338,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             });
             messages.push(msg(fbCrit ? `暴击！火球术！造成 ${totalDmg} 点火焰伤害！` : `火球术！造成 ${totalDmg} 点火焰伤害！`, MessageCategory.Combat, fbCrit ? '#ffcc44' : '#ff6644'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && fbHitIds.has(e2.id))) {
-              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; if (e.defId === 'mimic') player.mimicKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
           }
           break;
@@ -4152,7 +4373,7 @@ export const useGameStore = create<GameStore>((set, get) => {
             });
             messages.push(msg(clCrit ? `暴击！闪电链！击中 ${targets.length} 个敌人，共造成 ${totalDmg} 点伤害！` : `闪电链！击中 ${targets.length} 个敌人，共造成 ${totalDmg} 点伤害！`, MessageCategory.Combat, clCrit ? '#ffcc44' : '#cccc44'));
             for (const e of enemies.filter(e2 => e2.hp <= 0 && hitIds.has(e2.id))) {
-              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+              player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; if (e.defId === 'mimic') player.mimicKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
             }
           }
           break;
@@ -4180,7 +4401,7 @@ export const useGameStore = create<GameStore>((set, get) => {
               addFloatingText(target.pos.x, target.pos.y, `-${critDmg}`, '#8844ff', 'crit');
               messages.push(msg(`暗影步！瞬移到${target.name}身边，暴击造成 ${critDmg} 点伤害！`, MessageCategory.Combat, '#8844ff'));
               if (target.hp - critDmg <= 0) {
-                player.exp += getTalentModifiedExp(player, target.exp); player.killCount++; if (target.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, target.goldDrop);
+                player.exp += getTalentModifiedExp(player, target.exp); player.killCount++; if (target.isBoss) player.bossKillCount++; if (target.defId === 'mimic') player.mimicKillCount++; player.gold += getTalentModifiedGoldDrop(player, target.goldDrop);
               }
             } else {
               messages.push(msg('无法瞬移到目标身边！', MessageCategory.System, '#888888'));
@@ -4211,7 +4432,7 @@ export const useGameStore = create<GameStore>((set, get) => {
           });
           messages.push(msg(fokCrit ? `暴击！扇刃！对 ${hitCount} 个敌人造成 ${dmg} 点伤害！` : `扇刃！对 ${hitCount} 个敌人造成 ${dmg} 点伤害！`, MessageCategory.Combat, fokCrit ? '#ffcc44' : '#aaaaaa'));
           for (const e of enemies.filter(e2 => e2.hp <= 0 && fokHitIds.has(e2.id))) {
-            player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
+            player.exp += getTalentModifiedExp(player, e.exp); player.killCount++; if (e.isBoss) player.bossKillCount++; if (e.defId === 'mimic') player.mimicKillCount++; player.gold += getTalentModifiedGoldDrop(player, e.goldDrop);
           }
           break;
         }
@@ -5148,6 +5369,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         player: loadedState.player ? {
           ...loadedState.player,
           bossKillCount: loadedState.player.bossKillCount ?? 0,
+          mimicKillCount: loadedState.player.mimicKillCount ?? 0,
           bossBlessings: loadedState.player.bossBlessings ?? [],
           finalPactUsed: loadedState.player.finalPactUsed ?? false,
           inscriptionCount: loadedState.player.inscriptionCount ?? 0,
@@ -5239,6 +5461,160 @@ export const useGameStore = create<GameStore>((set, get) => {
 
     hasSaveGame: () => {
       return hasSave();
+    },
+
+    devGoto: (floor: number) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (floor < 1 || !state.player) return;
+      enterFloor(floor);
+      const biome = getBiomeForFloor(floor);
+      const hasBoss = get().enemies.some(e => e.isBoss && e.hp > 0);
+      AudioManager.updateContext('playing', floor, hasBoss, biome);
+    },
+    devSetHp: (hp: number) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      set({ player: { ...state.player, hp: Math.max(1, Math.min(hp, state.player.maxHp)) } });
+    },
+    devSetMp: (mp: number) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      set({ player: { ...state.player, mp: Math.max(0, Math.min(mp, state.player.maxMp)) } });
+    },
+    devSetHunger: (hunger: number) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      set({ player: { ...state.player, hunger: Math.max(0, Math.min(hunger, state.player.maxHunger)) } });
+    },
+    devSetGold: (gold: number) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      set({ player: { ...state.player, gold: Math.max(0, gold) } });
+    },
+    devAddExp: (exp: number) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      let player = { ...state.player, exp: state.player.exp + exp };
+      while (checkLevelUp(player)) {
+        player = applyLevelUp(player);
+      }
+      set({ player });
+      addMessages([msg(`→ 经验 +${exp}（等级 ${player.level}）`, MessageCategory.System, '#ff44ff')]);
+    },
+    devSetLevel: (level: number) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      const levelDiff = level - state.player.level;
+      if (levelDiff <= 0) return;
+      const classDef = CLASS_DEFS[state.player.class];
+      set({
+        player: {
+          ...state.player,
+          level,
+          statPoints: state.player.statPoints + levelDiff * 3,
+          maxHp: state.player.maxHp + classDef.hpPerLevel * levelDiff,
+          maxMp: state.player.maxMp + classDef.mpPerLevel * levelDiff,
+          expToNext: expForLevel(level + 1),
+          hp: state.player.maxHp + classDef.hpPerLevel * levelDiff,
+          mp: state.player.maxMp + classDef.mpPerLevel * levelDiff,
+        },
+      });
+    },
+    devToggleGod: () => {
+      if (!__DEV__) return;
+      const state = get();
+      const newGod = !state.devGodMode;
+      set({ devGodMode: newGod });
+      addMessages([msg(newGod ? '🛡 无敌模式已开启' : '🛡 无敌模式已关闭', MessageCategory.System, '#ff44ff')]);
+    },
+    devReveal: () => {
+      if (!__DEV__) return;
+      const state = get();
+      const map = state.map;
+      const visible = new Set(state.visibleTiles);
+      const remembered = new Map(state.rememberedMap);
+      const newMap = map.map(row => row.map(tile => ({ ...tile })));
+      for (let y = 0; y < map.length; y++) {
+        for (let x = 0; x < map[y].length; x++) {
+          const key = `${x},${y}`;
+          visible.add(key);
+          const tile = newMap[y][x];
+          tile.visible = true;
+          tile.remembered = true;
+          remembered.set(key, { char: tile.char, fg: tile.fg, bg: tile.bg });
+        }
+      }
+      set({ visibleTiles: visible, rememberedMap: remembered, map: newMap, devRevealed: true });
+      addMessages([msg('👁 全地图已揭示（移动不会消失，再次输入 reveal 关闭）', MessageCategory.System, '#ff44ff')]);
+    },
+    devGiveItem: (category: string) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      const rng = new SeededRandom(Date.now());
+      let item: Item;
+      switch (category) {
+        case 'food': item = createFood(rng.nextInt(0, FOOD_DEFS.length - 1)); break;
+        case 'potion': item = createPotion(rng.nextInt(0, POTION_DEFS.length - 1)); break;
+        case 'scroll': item = createScroll(rng.nextInt(0, SCROLL_DEFS.length - 1)); break;
+        default: item = createRandomItem(state.currentFloor, rng, false, 0, 0); break;
+      }
+      if (state.player.inventory.length < getMaxInventorySize(state.player)) {
+        set({ player: { ...state.player, inventory: [...state.player.inventory, item] } });
+      }
+    },
+    devSpawnEnemy: (defId: string) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+      for (const d of dirs) {
+        const pos = { x: state.player.pos.x + d.x, y: state.player.pos.y + d.y };
+        const tile = state.map[pos.y]?.[pos.x];
+        if (tile?.walkable && !state.enemies.some(e => e.pos.x === pos.x && e.pos.y === pos.y)) {
+          const enemy = createEnemy(defId, pos, false, state.currentFloor);
+          if (enemy) {
+            set({ enemies: [...state.enemies, enemy] });
+            return;
+          }
+        }
+      }
+    },
+    devResetCooldowns: () => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      set({ player: { ...state.player, skillCooldowns: [0, 0, 0] as number[] } });
+    },
+    devAddTalent: (talentId: string) => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      if (state.player.talents.includes(talentId)) return;
+      set({ player: { ...state.player, talents: [...state.player.talents, talentId] } });
+    },
+    devKillAll: () => {
+      if (!__DEV__) return;
+      const state = get();
+      if (!state.player) return;
+      const killCount = state.enemies.filter(e => e.hp > 0).length;
+      const bossCount = state.enemies.filter(e => e.hp > 0 && e.isBoss).length;
+      set({
+        enemies: [],
+        player: {
+          ...state.player,
+          killCount: state.player.killCount + killCount,
+          bossKillCount: state.player.bossKillCount + bossCount,
+        },
+      });
+      addMessages([msg(`💀 消灭了 ${killCount} 个敌人（含 ${bossCount} 个Boss）`, MessageCategory.System, '#ff44ff')]);
     },
   };
 });

@@ -13,12 +13,16 @@ import {
 function carveBridge(map: Tile[][], x1: number, y1: number, x2: number, y2: number, biome: Biome, width: number): void {
   const mapHeight = map.length;
   const mapWidth = map[0]?.length || 0;
+  // Only carve through Lava/CooledLava — preserve Floor tiles and special tiles
+  const carveable = new Set([TileType.Lava, TileType.CooledLava, TileType.Wall, TileType.VoidWall]);
   let x = x1, y = y1;
   while (x !== x2) {
     for (let w = 0; w < width; w++) {
       const py = y + w;
       if (x >= 0 && x < mapWidth && py >= 0 && py < mapHeight) {
-        map[py][x] = createTile(TileType.Corridor, biome);
+        if (carveable.has(map[py][x].type)) {
+          map[py][x] = createTile(TileType.Corridor, biome);
+        }
       }
     }
     x += x < x2 ? 1 : -1;
@@ -27,7 +31,9 @@ function carveBridge(map: Tile[][], x1: number, y1: number, x2: number, y2: numb
     for (let w = 0; w < width; w++) {
       const px = x + w;
       if (px >= 0 && px < mapWidth && y >= 0 && y < mapHeight) {
-        map[y][px] = createTile(TileType.Corridor, biome);
+        if (carveable.has(map[y][px].type)) {
+          map[y][px] = createTile(TileType.Corridor, biome);
+        }
       }
     }
     y += y < y2 ? 1 : -1;

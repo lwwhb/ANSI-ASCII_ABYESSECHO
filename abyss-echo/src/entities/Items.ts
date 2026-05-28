@@ -126,7 +126,7 @@ const EFFECT_CHANCE: Record<Rarity, number> = {
   [Rarity.Legendary]: 1.0,
 };
 
-const EFFECT_NAME_ZH: Record<EquipmentEffect, string> = {
+export const EFFECT_NAME_ZH: Record<EquipmentEffect, string> = {
   [EquipmentEffect.LifeSteal]: '吸血',
   [EquipmentEffect.ManaSteal]: '吸魔',
   [EquipmentEffect.CritBonus]: '暴击强化',
@@ -268,7 +268,7 @@ export function createRandomItem(floor: number, rng: SeededRandom, allowCursed: 
     return createScroll(idx);
   } else {
     // Food: scaled by foodMultiplier
-    const effectiveFoodPct = 0.15 * Math.min(foodMultiplier, 1.0);
+    const effectiveFoodPct = 0.15 * foodMultiplier;
     if (roll < 0.80 + effectiveFoodPct) {
       const idx = rng.nextInt(0, FOOD_DEFS.length - 1);
       return createFood(idx);

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.5**.
+This workspace contains **abyss-echo** (深渊回响), a browser-based roguelike dungeon crawler rendered in ANSI/ASCII art style with procedurally generated 8-bit chiptune music. The project is a single-page React+TypeScript application built with Vite. Current version: **v1.3.8**.
 
 ## Repository Structure
 
@@ -107,7 +107,7 @@ All commands run from `abyss-echo/`:
 - `loadGame()` restores state, rebuilds FOV via `updateFOV()`, then **immediately deletes save** (anti save-scumming)
 - `deleteSave(reason)` called on: load, death (`handlePlayerDeath`), corruption (parse failure)
 - `suspendAndQuit()` — ESC key → confirm → save → return to title
-- Save data includes `version: "1.3.5"` field for future migration
+- Save data includes `version: "1.3.8"` field for future migration
 - `deathCause: string` in `GameState` — composed at death time, displayed on GameOverScreen; reset on restart/load
 - `GameState` fields are all JSON-serializable (no Maps/Sets/functions); `visibleTiles`/`rememberedMap` are in `GameStore` but not `GameState`, rebuilt on load
 
@@ -152,6 +152,9 @@ The AI simulates realistic player behavior across these systems:
 - **Hunger:** Preventive eating at 50% threshold; prioritizes stairs descent when no food
 - **Inventory:** Drops/sells lowest-value items when full
 - **RNG:** Uses SeededRandom (not Math.random) for reproducible results
+- **Traps:** All 8 trap types recognized (Spike/Fire/Poison/Teleport/Paralysis/Confusion/Blind/Alarm); revealed traps (trapSense talent) have reduced pathfinding cost (3 vs 100); FungiPatch treated as dangerous terrain (cost 8)
+- **Hidden room tiles:** AI interacts with GoldPile (always pick up), MagicSpring (heal when hurt/low MP), LibraryShelf (free scrolls when safe), VoidRiftRoom (relic gamble when healthy), HiddenAltar (stat boost)
+- **Deserter awareness:** Boss escape threshold tightened from HP<20% to HP<10% when player already has deserter flag (avoids compounding +50% exp penalty)
 
 ### AI Distance & LOS Rules
 - **Euclidean distance** — The game's `distance()` in FOV.ts uses Euclidean distance (√(Δx²+Δy²)). AI skill range checks MUST use Euclidean distance too, NOT Manhattan distance (`|Δx|+|Δy|`)
@@ -270,6 +273,13 @@ Output: terminal report + `simulation/simulation-report.txt` with HP/gold/equipm
 - GameOverScreen: achievements and high scores are toggle buttons (mutually exclusive), not always-visible panels
 - closeShop BGM fix: `closeShop()` now calls `setPhase(Playing)` instead of directly setting phase, ensuring BGM context update
 - Cursed item selling: cursed items can be sold at 1/4 price (was blocked entirely)
+- **Mimic disguise system:** Mimics no longer appear as `M` enemies on the map; instead, they disguise as floor items via `FloorItem.isMimic?: boolean`. In `enterFloor()`, after all items are placed (including hidden rooms), 5% of non-food items per floor are marked `isMimic: true`. On `pickupItem()`, if the item is a mimic: fake item removed, mimic enemy spawned on adjacent walkable cell, surprise attack (2× ATK damage) applied to player. `_skipAttack: true` set on spawned mimic to prevent double-dip from `processTurn()` running `surprise` again. Death check (`handlePlayerDeath('被宝箱怪伏击')`) runs after surprise damage in both spawn and fallback paths. If no adjacent cell available: "bite and run" trap-style damage (26 base), no enemy spawned. Mimic minFloor=1 (all biomes), removed from all `enemyIds` arrays — spawns only via item disguise
+- **trapSense mimic counterplay:** If player has `trapSense` talent when picking up a mimic item: mimic spawns without surprise attack (`_skipAttack: true`), shows warning message "你的直觉警告你：这个物品不对劲！宝箱怪现出原形！", plays `alarm` SFX. If no adjacent cell: mimic "escapes" with warning message instead of dealing damage
+- **mimicBonus:** Mimic kills get `mimicBonus = 0.30` added to `luckBonus` in `createRandomItem()`, guaranteeing Rare+ item drops (~45%+ probability)
+- **mimicKillCount:** Player field tracking total mimic kills; used by `mimicSlayer` (1 kill) and `mimicHunter` (10 kills) achievements; incremented at all 11 kill points alongside `bossKillCount`
+- **graveHound (守墓犬):** New enemy in Ancient Crypt (F11-15), replaces mimic in Crypt `enemyIds`. Stats: HP 38, ATK 14, DEF 5, EXP 28, speed 2, weak Lightning. Behavior: `CallAlly` + special ability `howl`. CallAlly gives +1 speed to same-type enemies when first seeing player (capped at speed 3 via `Math.min(enemies[j].speed + 1, 3)`). Howl: summons 1 enemy from biome pool, filters out `howl` ability enemies to prevent recursive summoning, plays `alarm` SFX
+- **_skipAttack:** `Enemy._skipAttack?: boolean` — when true, the enemy's first action in `processTurn()` is skipped (set to false after skipping). Used for mimic spawn (prevent double surprise attack) and gargoyle activation
+- Corridor carving preserves special tiles: `carveCorridor()` in DungeonGenerator only carves through Wall/VoidWall/Lava/CooledLava/Water/ShallowWater/PoisonGas — Sarcophagus, HiddenSarcophagus, Throne, Barricade, WeaponRack, Forge are never destroyed by corridors. CryptGenerator's `carveWideCorridorReal` only carves Wall/VoidWall. LavaCoreGenerator's `carveBridge` only carves Lava/CooledLava/Wall/VoidWall (previously had no carveable check and unconditionally overwrote all tiles)
 
 ### Hidden Room Reward System
 - 12 hidden room types defined by `HiddenRoomType` enum: `Slaughterhouse`, `Treasury`, `Armory`, `AlchemyLab`, `MonsterNest`, `AncientTomb`, `MagicSpring`, `HiddenAltar`, `Library`, `VoidRift`, `FungiPatch`, `Empty`

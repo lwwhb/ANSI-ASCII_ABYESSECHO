@@ -21,7 +21,8 @@ export function calculateMeleeDamage(
   weaponDamage: number,
   defender: { defense: number; weakness: Element; resistance: Element },
   element: Element,
-  rng: SeededRandom
+  rng: SeededRandom,
+  critMultiplier: number = 1.5
 ): CombatResult {
   const baseDamage = Math.floor(attackerStats.str * 0.5) + weaponDamage;
   const variance = rng.nextInt(-2, 2);
@@ -40,13 +41,13 @@ export function calculateMeleeDamage(
   const critChance = Math.min(1.0, 0.05 + attackerStats.dex / 200);
   const critical = rng.chance(critChance);
   if (critical) {
-    damage = Math.floor(damage * 1.5);
+    damage = Math.floor(damage * critMultiplier);
   }
 
   return {
     damage,
-    physicalDamage: critical ? Math.floor(physicalDamage * 1.5) : physicalDamage,
-    elementalDamage: critical ? Math.floor(elementalDamage * 1.5) : elementalDamage,
+    physicalDamage: critical ? Math.floor(physicalDamage * critMultiplier) : physicalDamage,
+    elementalDamage: critical ? Math.floor(elementalDamage * critMultiplier) : elementalDamage,
     critical,
     element,
     killed: false,

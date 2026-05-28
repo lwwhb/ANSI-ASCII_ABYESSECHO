@@ -67,6 +67,7 @@ export const CLASS_DEFS: Record<CharacterClass, {
 export const HUNGER_MAX = 200;
 export const HUNGER_RATE = 1;
 export const HUNGER_STARVE_DAMAGE = 3;
+export const DESCEND_HUNGER_RESTORE = 40;
 export const EXP_BASE = 20;
 export const EXP_GROWTH = 1.5;
 
@@ -259,7 +260,8 @@ export const ENEMY_DEFS: EnemyDef[] = [
   { id: 'darkKnight',name: '暗黑骑士', char: 'Ķ', fg: '#4400aa', hp: 50, attack: 14, defense: 10, exp: 35, behavior: EnemyBehavior.Aggressive,  element: Element.None,       weakness: Element.Lightning,  resistance: Element.None,       minFloor: 10, speed: 1, dropChance: 0.4, alertRadius: 6, goldDrop: 20 },
   { id: 'wraith',    name: '怨灵',     char: 'R', fg: '#8844cc', hp: 32, attack: 12, defense: 5,  exp: 28, behavior: EnemyBehavior.Revive,      element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 10, speed: 1, dropChance: 0.3, alertRadius: 8, specialAbility: 'drain', goldDrop: 15 },
   { id: 'troll',     name: '巨魔',     char: 'T', fg: '#448844', hp: 60, attack: 11, defense: 9,  exp: 30, behavior: EnemyBehavior.Ambush,      element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.4, alertRadius: 5, specialAbility: 'regenerate', goldDrop: 18 },
-  { id: 'mimic',     name: '宝箱怪',   char: 'M', fg: '#ccaa44', hp: 42, attack: 13, defense: 7,  exp: 32, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.5, alertRadius: 2, specialAbility: 'surprise', goldDrop: 25 },
+  { id: 'mimic',     name: '宝箱怪',   char: 'M', fg: '#ccaa44', hp: 42, attack: 13, defense: 7,  exp: 32, behavior: EnemyBehavior.Stationary,  element: Element.None,       weakness: Element.None,       resistance: Element.None,       minFloor: 1, speed: 1, dropChance: 0.8, alertRadius: 2, specialAbility: 'surprise', goldDrop: 40 },
+  { id: 'graveHound', name: '守墓犬',   char: 'Ð', fg: '#887744', hp: 38, attack: 14, defense: 5,  exp: 28, behavior: EnemyBehavior.CallAlly,     element: Element.None,       weakness: Element.Lightning,  resistance: Element.None,       minFloor: 11, speed: 2, dropChance: 0.35, alertRadius: 7, specialAbility: 'howl', goldDrop: 18 },
   { id: 'tombGuard', name: '守墓人', char: 'Š', fg: '#887766', hp: 55, attack: 10, defense: 13, exp: 35, behavior: EnemyBehavior.Revive,      element: Element.None,       weakness: Element.Fire,       resistance: Element.None,       minFloor: 11, speed: 1, dropChance: 0.3, alertRadius: 5, specialAbility: 'patrol', goldDrop: 15 },
   { id: 'soulEater', name: '噬魂者', char: 'Ψ', fg: '#aa66ff', hp: 30, attack: 15, defense: 4,  exp: 30, behavior: EnemyBehavior.Aggressive,  element: Element.Ice,        weakness: Element.Fire,       resistance: Element.Ice,        minFloor: 11, speed: 3, dropChance: 0.25, alertRadius: 7, specialAbility: 'phaseThrough', goldDrop: 12 },
   // Floor 16-20
@@ -558,7 +560,7 @@ export const SKILL_DEFS: Record<CharacterClass, SkillDef[]> = {
 // ============================================================
 export const TALENT_DEFS: TalentDef[] = [
   // Generic talents
-  { id: 'ironStomach', name: 'Iron Stomach', nameZh: '铁胃', description: '饥饿速度降低50%', icon: '🍖' },
+  { id: 'ironStomach', name: 'Iron Stomach', nameZh: '铁胃', description: '饥饿伤害减半（3→1/回合）', icon: '🍖' },
   { id: 'thickSkin', name: 'Thick Skin', nameZh: '厚皮', description: '受到物理伤害减少2', icon: '🛡' },
   { id: 'fastLearner', name: 'Fast Learner', nameZh: '快速学习', description: '经验获取+20%', icon: '📚' },
   { id: 'lucky', name: 'Lucky', nameZh: '幸运', description: '物品掉落率+15%', icon: '🍀' },
@@ -604,6 +606,8 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
   { id: 'skillMaster', name: 'Skill Master', nameZh: '技能大师', description: '使用技能50次', icon: '⚡' },
   { id: 'shopper', name: 'Shopper', nameZh: '精明买家', description: '在商店购买5件物品', icon: '🛒' },
   { id: 'talent3', name: 'Gifted', nameZh: '天赋异禀', description: '获得3个天赋', icon: '🌟' },
+  { id: 'mimicSlayer', name: 'Mimic Slayer', nameZh: '虚假宝藏', description: '击败一只宝箱怪', icon: '🎭' },
+  { id: 'mimicHunter', name: 'Mimic Hunter', nameZh: '诱饵猎人', description: '击败10只宝箱怪', icon: '🗡' },
 ];
 
 // ============================================================
@@ -700,7 +704,7 @@ export const BIOME_CONFIG: Record<Biome, {
     hasWater: false, hasLava: false, hasGas: false, trapChance: 0.03,
     shopChance: 0.15, eventChance: 0.1,
     mapWidth: 80, mapHeight: 28, itemsPerFloorBase: 7, itemsPerFloorGrowth: 1.5,
-    foodDropMultiplier: 1.5, scrollDropMultiplier: 1.3, potionDropMultiplier: 1.0,
+    foodDropMultiplier: 1.2, scrollDropMultiplier: 1.3, potionDropMultiplier: 1.0,
   },
   [Biome.CrystalCavern]: {
     name: 'Crystal Cavern', nameZh: '水晶溶洞', minFloor: 6,
@@ -708,15 +712,15 @@ export const BIOME_CONFIG: Record<Biome, {
     hasWater: true, hasLava: false, hasGas: false, trapChance: 0.04,
     shopChance: 0.2, eventChance: 0.15,
     mapWidth: 90, mapHeight: 32, itemsPerFloorBase: 4, itemsPerFloorGrowth: 1.2,
-    foodDropMultiplier: 1.2, scrollDropMultiplier: 1.5, potionDropMultiplier: 1.0,
+    foodDropMultiplier: 1.1, scrollDropMultiplier: 1.5, potionDropMultiplier: 1.0,
   },
   [Biome.AncientCrypt]: {
     name: 'Ancient Crypt', nameZh: '远古陵墓', minFloor: 11,
-    enemyIds: ['darkKnight', 'wraith', 'troll', 'mimic', 'tombGuard', 'soulEater', 'demon', 'gorgon'],
+    enemyIds: ['darkKnight', 'wraith', 'troll', 'graveHound', 'tombGuard', 'soulEater', 'demon', 'gorgon'],
     hasWater: false, hasLava: false, hasGas: true, trapChance: 0.06,
     shopChance: 0.15, eventChance: 0.2,
     mapWidth: 80, mapHeight: 34, itemsPerFloorBase: 3, itemsPerFloorGrowth: 1.0,
-    foodDropMultiplier: 1.0, scrollDropMultiplier: 2.0, potionDropMultiplier: 1.0,
+    foodDropMultiplier: 1.2, scrollDropMultiplier: 2.0, potionDropMultiplier: 1.0,
   },
   [Biome.LavaCore]: {
     name: 'Lava Core', nameZh: '熔岩核心', minFloor: 16,
@@ -724,7 +728,7 @@ export const BIOME_CONFIG: Record<Biome, {
     hasWater: false, hasLava: true, hasGas: false, trapChance: 0.05,
     shopChance: 0.1, eventChance: 0.15,
     mapWidth: 100, mapHeight: 32, itemsPerFloorBase: 3, itemsPerFloorGrowth: 0.8,
-    foodDropMultiplier: 1.0, scrollDropMultiplier: 1.0, potionDropMultiplier: 1.5,
+    foodDropMultiplier: 1.3, scrollDropMultiplier: 1.0, potionDropMultiplier: 1.5,
   },
   [Biome.VoidAbyss]: {
     name: 'Void Abyss', nameZh: '虚空深渊', minFloor: 21,
@@ -732,7 +736,7 @@ export const BIOME_CONFIG: Record<Biome, {
     hasWater: false, hasLava: true, hasGas: true, trapChance: 0.07,
     shopChance: 0.08, eventChance: 0.1,
     mapWidth: 110, mapHeight: 36, itemsPerFloorBase: 2, itemsPerFloorGrowth: 0.6,
-    foodDropMultiplier: 0.85, scrollDropMultiplier: 1.0, potionDropMultiplier: 0.8,
+    foodDropMultiplier: 1.4, scrollDropMultiplier: 1.0, potionDropMultiplier: 0.8,
   },
 };
 

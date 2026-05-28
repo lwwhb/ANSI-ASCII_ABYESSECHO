@@ -189,23 +189,24 @@ const MapView: React.FC = () => {
 
     // Apply time-based screen shake with ease-out decay
     const shakeDataNow = useGameStore.getState().screenShake;
-    if (shakeDataNow) {
-      const elapsed = now - shakeDataNow.createdAt;
-      if (elapsed < SHAKE_DURATION) {
-        // Ease-out: shake starts strong and decays to 0 over SHAKE_DURATION
-        const progress = elapsed / SHAKE_DURATION;
-        const decay = 1 - Math.pow(progress, 2); // ease-out quadratic
-        const currentIntensity = shakeDataNow.intensity * decay;
-        const shakeX = (Math.random() - 0.5) * currentIntensity * 2;
-        const shakeY = (Math.random() - 0.5) * currentIntensity * 2;
-        ctx.translate(shakeX, shakeY);
+    try {
+      if (shakeDataNow) {
+        const elapsed = now - shakeDataNow.createdAt;
+        if (elapsed < SHAKE_DURATION) {
+          // Ease-out: shake starts strong and decays to 0 over SHAKE_DURATION
+          const progress = elapsed / SHAKE_DURATION;
+          const decay = 1 - Math.pow(progress, 2); // ease-out quadratic
+          const currentIntensity = shakeDataNow.intensity * decay;
+          const shakeX = (Math.random() - 0.5) * currentIntensity * 2;
+          const shakeY = (Math.random() - 0.5) * currentIntensity * 2;
+          ctx.translate(shakeX, shakeY);
+        }
       }
-    }
 
-    // Draw offscreen map
-    ctx.drawImage(offscreen, 0, 0);
+      // Draw offscreen map
+      ctx.drawImage(offscreen, 0, 0);
 
-    // Render floating texts with animation
+      // Render floating texts with animation
     const activeTexts = currentTexts.filter(ft => now - ft.createdAt <= FLOAT_DURATION);
     for (const ft of activeTexts) {
       const elapsed = now - ft.createdAt;
@@ -240,8 +241,10 @@ const MapView: React.FC = () => {
     }
     ctx.globalAlpha = 1;
 
-    // Reset transform
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Reset transform (guaranteed even on error)
+    } finally {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
 
     rafRef.current = requestAnimationFrame(animate);
   }, []);

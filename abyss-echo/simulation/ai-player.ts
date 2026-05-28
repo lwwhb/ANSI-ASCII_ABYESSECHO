@@ -209,9 +209,12 @@ function isUtilityScroll(item: Item): boolean {
 // ============================================================
 
 const TALENT_PRIORITIES: Record<string, string[]> = {
-  warrior: ['nightVision', 'thickSkin', 'ironStomach', 'regeneration', 'deadlyStrike', 'shieldWall', 'ironWill', 'bloodFury', 'fastLearner', 'lucky', 'tenacious', 'packMule', 'elementalAffinity', 'greedy', 'meditation'],
-  mage: ['nightVision', 'meditation', 'spellPenetration', 'manaShield', 'arcaneResonance', 'fastLearner', 'ironStomach', 'lucky', 'elementalAffinity', 'thickSkin', 'regeneration', 'deadlyStrike', 'tenacious', 'packMule', 'greedy'],
-  rogue: ['ironStomach', 'nightVision', 'trapSense', 'deadlyStrike', 'evasionMaster', 'lucky', 'toxicBlade', 'fastLearner', 'regeneration', 'thickSkin', 'tenacious', 'packMule', 'elementalAffinity', 'greedy', 'meditation'],
+  // Warrior: STR=14 tank/melee — prioritize survival + melee power, skip elemental
+  warrior: ['nightVision', 'shieldWall', 'thickSkin', 'bloodFury', 'regeneration', 'ironWill', 'ironStomach', 'deadlyStrike', 'tenacious', 'fastLearner', 'lucky', 'packMule', 'greedy', 'meditation', 'elementalAffinity'],
+  // Mage: INT=14 glass cannon — prioritize mana efficiency + spell power, skip melee
+  mage: ['nightVision', 'manaShield', 'meditation', 'spellPenetration', 'elementalAffinity', 'arcaneResonance', 'ironStomach', 'fastLearner', 'lucky', 'regeneration', 'thickSkin', 'tenacious', 'packMule', 'greedy', 'deadlyStrike'],
+  // Rogue: DEX=14 crit/evade — prioritize crit + evasion + poison synergy
+  rogue: ['nightVision', 'deadlyStrike', 'evasionMaster', 'trapSense', 'toxicBlade', 'ironStomach', 'fastLearner', 'lucky', 'regeneration', 'thickSkin', 'tenacious', 'packMule', 'elementalAffinity', 'greedy', 'meditation'],
 };
 
 // ============================================================
@@ -247,22 +250,30 @@ function getTileTypeStr(tile: { type: TileType; walkable: boolean }): string {
   return tile.type as string;
 }
 
-function isTrap(tile: { type: TileType }): boolean {
+function isTrap(tile: { type: TileType; trapRevealed?: boolean }): boolean {
   const t = tile.type as string;
-  return t === 'trapSpike' || t === 'trapFire' || t === 'trapTeleport' || t === 'trapPoison';
+  return t === 'trapSpike' || t === 'trapFire' || t === 'trapTeleport' || t === 'trapPoison' ||
+         t === 'trapParalysis' || t === 'trapConfusion' || t === 'trapBlind' || t === 'trapAlarm';
 }
 
-function isDangerousTerrain(tile: { type: TileType }): boolean {
+function isDangerousTerrain(tile: { type: TileType; trapRevealed?: boolean }): boolean {
   const t = tile.type as string;
-  return t === 'cooledLava' || t === 'shallowWater' || isTrap(tile);
+  return t === 'cooledLava' || t === 'shallowWater' || t === 'fungiPatch' || isTrap(tile);
 }
 
 // Progressive terrain cost: terrainLevel is set before each decideAction call
 let currentTerrainLevel = 1;
 
-function terrainCost(tile: { type: TileType }): number {
+function terrainCost(tile: { type: TileType; trapRevealed?: boolean }): number {
   const t = tile.type as string;
-  if (t === 'trapSpike' || t === 'trapFire' || t === 'trapTeleport' || t === 'trapPoison') {
+  const isTrapTile = t === 'trapSpike' || t === 'trapFire' || t === 'trapTeleport' || t === 'trapPoison' ||
+                     t === 'trapParalysis' || t === 'trapConfusion' || t === 'trapBlind' || t === 'trapAlarm';
+  if (isTrapTile) {
+    // Revealed traps: much less scary (we know they're there, can avoid stepping on them)
+    if (tile.trapRevealed) {
+      if (currentTerrainLevel >= 3) return 1;
+      return 3;
+    }
     if (currentTerrainLevel >= 3) return 2;   // L3 desperation: nearly ignore traps
     if (currentTerrainLevel >= 2) return 8;    // L2: reduced penalty
     return 100;                                // L1: avoid traps
@@ -272,13 +283,16 @@ function terrainCost(tile: { type: TileType }): number {
     return 6;
   }
   if (t === 'shallowWater') return 2;
+  if (t === 'fungiPatch') return 8;  // Poisonous — avoid unless desperate
   return 1;
 }
 
 function isInteractiveTerrain(tile: { type: TileType }): boolean {
   const t = tile.type as string;
   return t === 'sarcophagus' || t === 'hiddenSarcophagus' || t === 'altar' ||
-         t === 'hiddenAltar' || t === 'fountain' || t === 'inscription' || t === 'portal' || t === 'eliteDoor';
+         t === 'hiddenAltar' || t === 'fountain' || t === 'inscription' || t === 'portal' ||
+         t === 'eliteDoor' || t === 'goldPile' || t === 'magicSpring' ||
+         t === 'libraryShelf' || t === 'voidRiftRoom';
 }
 
 // ============================================================
@@ -900,16 +914,42 @@ export function decideAction(
   }
 
   // --- Talent Selection phase ---
+  // Match the real game: 3 random options from available talents, pick best among them
   if (phase === 'talentSelection') {
     const priorities = TALENT_PRIORITIES[player.class] ?? TALENT_PRIORITIES.warrior;
-    for (const t of priorities) {
-      if (!talents.includes(t)) return { type: 'selectTalent', talentId: t };
-    }
+    // Talent class restrictions matching TALENT_DEFS classRequired
+    const classExclusive: Record<string, string[]> = {
+      [CharacterClass.Warrior]: ['shieldWall', 'bloodFury', 'ironWill'],
+      [CharacterClass.Mage]: ['spellPenetration', 'arcaneResonance', 'manaShield'],
+      [CharacterClass.Rogue]: ['evasionMaster', 'toxicBlade', 'trapSense'],
+    };
     const allTalents = ['nightVision', 'thickSkin', 'ironStomach', 'fastLearner', 'lucky', 'regeneration', 'greedy', 'tenacious', 'deadlyStrike', 'elementalAffinity', 'packMule', 'meditation', 'shieldWall', 'bloodFury', 'ironWill', 'spellPenetration', 'arcaneResonance', 'manaShield', 'evasionMaster', 'toxicBlade', 'trapSense'];
-    for (const t of allTalents) {
-      if (!talents.includes(t)) return { type: 'selectTalent', talentId: t };
+    const exclusiveToOther = Object.entries(classExclusive)
+      .filter(([cls]) => cls !== player.class)
+      .flatMap(([, talents]) => talents);
+    const available = allTalents.filter(t => !talents.includes(t) && !exclusiveToOther.includes(t));
+
+    if (available.length === 0) {
+      for (const t of allTalents) {
+        if (!talents.includes(t)) return { type: 'selectTalent', talentId: t };
+      }
+      return { type: 'selectTalent', talentId: allTalents[0] };
     }
-    return { type: 'selectTalent', talentId: allTalents[0] };
+    // Generate the same 3 options the game would show
+    const shuffled = [...available].sort(() => rng.next() - 0.5);
+    const options = shuffled.slice(0, Math.min(3, shuffled.length));
+    // Among the 3 options, pick the one with highest priority (lowest index)
+    let bestTalent = options[0];
+    let bestPriority = priorities.indexOf(bestTalent) >= 0 ? priorities.indexOf(bestTalent) : 999;
+    for (let i = 1; i < options.length; i++) {
+      const idx = priorities.indexOf(options[i]);
+      const priority = idx >= 0 ? idx : 999;
+      if (priority < bestPriority) {
+        bestPriority = priority;
+        bestTalent = options[i];
+      }
+    }
+    return { type: 'selectTalent', talentId: bestTalent };
   }
 
   if (bossBlessingPending) {
@@ -1027,6 +1067,22 @@ export function decideAction(
     if (t === 'inscription') {
       return { type: 'move', dx: ddx, dy: ddy };
     }
+    // GoldPile: free gold — always pick up
+    if (t === 'goldPile') {
+      return { type: 'move', dx: ddx, dy: ddy };
+    }
+    // MagicSpring: full HP/MP heal + defense buff — go when hurt or low MP
+    if (t === 'magicSpring' && (player.hp < player.maxHp * 0.8 || player.mp < player.maxMp * 0.5)) {
+      return { type: 'move', dx: ddx, dy: ddy };
+    }
+    // LibraryShelf: free scrolls + 10% chance statPoints — always go when safe
+    if (t === 'libraryShelf' && visibleEnemies8.length <= 1) {
+      return { type: 'move', dx: ddx, dy: ddy };
+    }
+    // VoidRiftRoom: 60% exclusive relic, 40% teleport — go when healthy (gamble)
+    if (t === 'voidRiftRoom' && player.hp > Math.floor(player.maxHp * 0.6) && visibleEnemies8.length <= 1) {
+      return { type: 'move', dx: ddx, dy: ddy };
+    }
     }
   }
   // Portal underfoot or adjacent: use when surrounded or as shortcut
@@ -1054,8 +1110,11 @@ export function decideAction(
   if (onBossFloor && bossAlive) {
     const boss = enemies.find(e => e.hp > 0 && e.isBoss)!;
 
-    // --- 2-ESCAPE: critically endangered (HP<20% or starving) → flee to stairs ---
-    const bossCriticallyEndangered = player.hp <= Math.floor(player.maxHp * 0.2) ||
+    // --- 2-ESCAPE: critically endangered → flee to stairs ---
+    // Deserter penalty: fleeing gives +50% exp requirement — make threshold stricter
+    // Only flee when truly about to die, not just mildly endangered
+    const deserterHpThreshold = (player as any).deserter ? 0.1 : 0.2;
+    const bossCriticallyEndangered = player.hp <= Math.floor(player.maxHp * deserterHpThreshold) ||
       (player.hunger <= 0 && !player.inventory.some(i => i.type === ItemType.Food));
     if (bossCriticallyEndangered) {
       if (isOnStairsDown(px, py, map)) return { type: 'descend' };
@@ -1656,6 +1715,29 @@ export function decideAction(
     }
     const path = bfsToTarget(px, py, targetItem.pos.x, targetItem.pos.y, isWalkableForBFS, w, h, map);
     if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+  }
+
+  // 6d2. Move toward visible beneficial terrain (GoldPile, MagicSpring, LibraryShelf, etc.)
+  {
+    const beneficialTile = findNearestTile(
+      px, py,
+      (x, y) => {
+        if (!visibleTiles.has(`${x},${y}`)) return false;
+        const tile = map[y]?.[x];
+        if (!tile) return false;
+        const t = tile.type as string;
+        if (t === 'goldPile') return true;
+        if (t === 'magicSpring' && (player.hp < player.maxHp * 0.7 || player.mp < player.maxMp * 0.4)) return true;
+        if (t === 'libraryShelf') return true;
+        if (t === 'hiddenAltar') return true;
+        return false;
+      },
+      isWalkableForBFS, w, h, map
+    );
+    if (beneficialTile && (beneficialTile.x !== px || beneficialTile.y !== py)) {
+      const path = bfsToTarget(px, py, beneficialTile.x, beneficialTile.y, isWalkableForBFS, w, h, map);
+      if (path) return { type: 'move', dx: path.dx, dy: path.dy };
+    }
   }
 
   // 6e. Explore: move toward edge of visible area (including doors leading to unknown)

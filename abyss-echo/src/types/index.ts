@@ -520,6 +520,7 @@ export interface Player extends EntityBase {
   statPoints: number;
   killCount: number;
   bossKillCount: number;
+  mimicKillCount: number;
   visionRadius: number;
   // New fields
   skillCooldowns: number[];
@@ -574,6 +575,7 @@ export enum GamePhase {
 export interface FloorItem {
   item: Item;
   pos: Position;
+  isMimic?: boolean;  // 伪装成物品的宝箱怪
 }
 
 // --- Game State ---
@@ -621,6 +623,9 @@ export interface GameState {
   steamVentTurns: { x: number; y: number; spawnTurn: number }[];
   floatingTexts: { x: number; y: number; text: string; color: string; createdAt: number; type?: 'damage' | 'heal' | 'status' | 'crit' }[];
   screenShake: { intensity: number; createdAt: number } | null;
+  devGodMode: boolean;
+  devRevealed: boolean;
+  devConsoleOpen: boolean;
 }
 
 export interface HighScore {

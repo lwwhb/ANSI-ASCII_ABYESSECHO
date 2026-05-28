@@ -18,6 +18,7 @@ import BossBlessingModal from './BossBlessingModal';
 import SkillBar from './SkillBar';
 import RelicBar from './RelicBar';
 import EnhanceModal from './EnhanceModal';
+import DevConsole from './DevConsole';
 
 const GameScreen: React.FC = () => {
   const phase = useGameStore(s => s.phase);
@@ -44,6 +45,9 @@ const GameScreen: React.FC = () => {
   }, [selectedInvIndex]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Dev console open: block all game input
+    if (useGameStore.getState().devConsoleOpen) return;
+
     if (showManual) {
       if (e.key === 'm' || e.key === 'M' || e.key === 'Escape') setShowManual(false);
       return;
@@ -284,6 +288,7 @@ const GameScreen: React.FC = () => {
       {pendingForge && <EnhanceModal />}
       {showHelp && <HelpOverlay onClose={() => setShowHelp(false)} />}
       {showManual && <ManualOverlay onClose={() => setShowManual(false)} />}
+      {__DEV__ && <DevConsole />}
       {showSuspendConfirm && (
         <div className="modal-overlay" style={{
           position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,

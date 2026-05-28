@@ -54,6 +54,7 @@ export function createPlayer(name: string, charClass: CharacterClass): Player {
     statPoints: 0,
     killCount: 0,
     bossKillCount: 0,
+    mimicKillCount: 0,
     visionRadius: 8,
     skillCooldowns: [0, 0, 0],
     talents: [],

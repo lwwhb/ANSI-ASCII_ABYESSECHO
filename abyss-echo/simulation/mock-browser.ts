@@ -2,6 +2,9 @@
 // Browser API mocks for running the game store in Node.js
 // ============================================================
 
+// __DEV__ global — defined by Vite in browser, must be set for Node.js
+(globalThis as any).__DEV__ = false;
+
 // localStorage mock
 const storage = new Map<string, string>();
 const localStorageMock = {

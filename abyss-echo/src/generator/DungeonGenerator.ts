@@ -171,11 +171,11 @@ export function carveCorridor(map: Tile[][], x1: number, y1: number, x2: number,
   let y = y1;
   const height = map.length;
   const width = map[0]?.length || 0;
-  // Tiles that corridors can carve through (Wall + VoidWall + Lava + CooledLava + non-walkable obstacles + Water)
+  // Tiles that corridors can carve through (Wall + VoidWall + Lava + CooledLava + Water + Gas)
+  // Note: Sarcophagus, Throne, Barricade, WeaponRack, Forge are deliberately placed
+  // interactive/decorative tiles and must NOT be destroyed by corridor carving.
   const carveable = new Set([
     TileType.Wall, TileType.VoidWall, TileType.Lava, TileType.CooledLava,
-    TileType.Sarcophagus, TileType.HiddenSarcophagus, TileType.Throne,
-    TileType.Barricade, TileType.WeaponRack, TileType.Forge,
     TileType.Water, TileType.ShallowWater, TileType.PoisonGas,
   ]);
 
@@ -470,6 +470,8 @@ export function placeArenaObjects(map: Tile[][], arenaData: BossArenaData): void
     if (obj.y >= 0 && obj.y < map.length && obj.x >= 0 && obj.x < map[0].length) {
       // Never overwrite StairsDown — player must be able to descend
       if (map[obj.y][obj.x].type === TileType.StairsDown) continue;
+      // 非矩形房间内竞技场物品可能落在墙格，跳过
+      if (!map[obj.y][obj.x].walkable && map[obj.y][obj.x].type !== TileType.Wall) continue;
       const defaults = NEW_TILE_DEFAULTS[obj.type];
       if (defaults) {
         map[obj.y][obj.x] = makeTile(obj.type, defaults.char, defaults.fg, defaults.bg, defaults.walkable, defaults.transparent);
@@ -889,7 +891,7 @@ export function placeEnemies(rooms: Room[], floor: number, rng: SeededRandom, en
   return enemies;
 }
 
-export function placeItems(rooms: Room[], floor: number, rng: SeededRandom, itemsBase: number, itemsGrowth: number): { defIndex: number; pos: Position }[] {
+export function placeItems(rooms: Room[], floor: number, rng: SeededRandom, itemsBase: number, itemsGrowth: number, map?: Tile[][]): { defIndex: number; pos: Position }[] {
   const count = Math.floor(itemsBase + itemsGrowth * Math.sqrt(floor));
   const items: { defIndex: number; pos: Position }[] = [];
   const spawnRooms = rooms.slice(1);
@@ -901,7 +903,29 @@ export function placeItems(rooms: Room[], floor: number, rng: SeededRandom, item
       x: rng.nextInt(room.x + 1, room.x + room.w - 2),
       y: rng.nextInt(room.y + 1, room.y + room.h - 2),
     };
-    items.push({ defIndex: i, pos });
+    // 非矩形房间 bounding box 内可能有墙格，跳过不可行走位置
+    if (map && !map[pos.y]?.[pos.x]?.walkable) {
+      // 重试最多10次找可行走位置
+      let found = false;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const retryPos = {
+          x: rng.nextInt(room.x + 1, room.x + room.w - 2),
+          y: rng.nextInt(room.y + 1, room.y + room.h - 2),
+        };
+        if (map[retryPos.y]?.[retryPos.x]?.walkable) {
+          items.push({ defIndex: i, pos: retryPos });
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        // fallback: 房间中心
+        if (!map[room.centerY]?.[room.centerX]?.walkable) continue;
+        items.push({ defIndex: i, pos: { x: room.centerX, y: room.centerY } });
+      }
+    } else {
+      items.push({ defIndex: i, pos });
+    }
   }
 
   return items;

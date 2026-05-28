@@ -2,7 +2,7 @@ import React from 'react';
 import { Item, ItemType, WeaponItem, ArmorItem, RingItem, AmuletItem, EquipmentSlot } from '../types';
 import { useGameStore } from '../store/gameStore';
 import { RARITY_COLORS } from '../constants';
-import { getItemName } from '../entities/Items';
+import { getItemName, EFFECT_NAME_ZH } from '../entities/Items';
 import { getMaxInventorySize } from '../entities/Player';
 
 interface InventoryModalProps {
@@ -37,7 +37,7 @@ function getItemStats(item: Item): string {
     case ItemType.Ring:
     case ItemType.Amulet: {
       const r = item as RingItem | AmuletItem;
-      return formatBonus(r.bonusStats) + (r.specialEffect ? ` ${r.specialEffect}` : '');
+      return formatBonus(r.bonusStats) + (r.specialEffect ? ` ${EFFECT_NAME_ZH[r.specialEffect] || r.specialEffect}` : '');
     }
     case ItemType.Potion:
       return item.description;
